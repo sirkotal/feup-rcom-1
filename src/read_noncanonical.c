@@ -90,18 +90,56 @@ int main(int argc, char *argv[])
 
     // Loop for input
     unsigned char buf[BUF_SIZE + 1] = {0}; // +1: Save space for the final '\0' char
-
+    int state = 0;
     while (STOP == FALSE)
     {
         // Returns after 5 chars have been input
-        int bytes = read(fd, buf, BUF_SIZE);
+        int bytes = read(fd, buf, 1);
         buf[bytes] = '\0'; // Set end of string to '\0', so we can printf
         //printf("%s:%d\n", buf, bytes);
-        for (int i = 0; i<BUF_SIZE; i++){
+        switch(state)
+            {
+                case 0:
+                  if (buf[0]==0x7E)
+                     state=1;
+                  break;
+                case 1:
+                  if (buf[0]==0x03)
+                     state=2;
+                  else if (buf[0]==0x7E)
+                     state=1;
+                  else
+                     state=0;
+                  break;
+                case 2:
+                  if (buf[0]==0x03)
+                     state=3;
+                  else if (buf[0]==0x7E)
+                     state=1;
+                  else
+                     state=0;
+                  break;
+                case 3:
+                  if (buf[0]==0x03^0x03)
+                     state=4;
+                  else if (buf[0]==0x7E)
+                     state=1;
+                  else
+                     state=0;
+                  break;
+                case 4:
+                  if (buf[0]==0x7E)
+                     STOP = TRUE;
+                  else
+                     state=0;
+                  break;
+            }
+         printf("state: %d",state);
+        /*for (int i = 0; i<BUF_SIZE; i++){
             printf("var = 0x%02X\n", (unsigned int)(buf[i] & 0xFF));
-        }
-        if (buf[1]^buf[2]==buf[3]){
-            STOP = TRUE;}
+        }*/
+        /*if (buf[1]^buf[2]==buf[3]){
+            STOP = TRUE;}*/
                
         //printf(":%s:%d\n", buf, bytes);
         //if (buf[0] == 'z')
