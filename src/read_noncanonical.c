@@ -100,45 +100,52 @@ int main(int argc, char *argv[])
     // Loop for input
     unsigned char buf[BUF_SIZE + 1] = {0}; // +1: Save space for the final '\0' char
     enum message_state state = START;
+    unsigned char byte;
 
     while (STOP == FALSE) {
         // Returns after 5 chars have been input
-        int bytes = read(fd, buf, 1);
-        buf[bytes] = '\0'; // Set end of string to '\0', so we can printf
+        int bytes = read(fd, &byte, 1);
+         // Set end of string to '\0', so we can printf
         //printf("%s:%d\n", buf, bytes);
         switch(state) {
             case START:
-               if (buf[0] == 0x7E)
+               if (byte == 0x7E){
                   state = FLAG_RCV;
+                  buf[START] = byte;
+                  }
                break;
             case FLAG_RCV:
-               if (buf[0] == 0x03)
+               if (byte == 0x03){
                   state = A_RCV;
-               else if (buf[0] == 0x7E)
+                  buf[FLAG_RCV] = 0x01;}
+               else if (byte == 0x7E)
                   state = FLAG_RCV;
                else
                   state = START;
                break;
             case A_RCV:
-               if (buf[0] == 0x03)
+               if (byte == 0x03){
                   state = C_RCV;
-               else if (buf[0] == 0x7E)
+                  buf[A_RCV] = 0x07;}
+               else if (byte == 0x7E)
                   state = FLAG_RCV;
                else
                   state = START;
                break;
             case C_RCV:
-               if (buf[0] == 0x03^0x03)
+               if (byte == 0x03^0x03){
                   state = BCC_OK;
+                  buf[C_RCV] = buf[FLAG_RCV]^buf[A_RCV];}
                else if (buf[0] == 0x7E)
                   state = FLAG_RCV;
                else
                   state = START;
                break;
             case BCC_OK:
-               if (buf[0] == 0x7E) {
+               if (byte == 0x7E) {
                   state = END;
                   STOP = TRUE;
+                  buf[BCC_OK] = byte;
                }
                else
                   state = START;
@@ -155,8 +162,6 @@ int main(int argc, char *argv[])
         //if (buf[0] == 'z')
           //  STOP = TRUE;
     }
-    buf[2]=0x07;
-    buf[3]=buf[1]^buf[2];
     int bytes = write(fd, buf, BUF_SIZE);
     printf("%d bytes written\n", bytes);
     // The while() cycle should be changed in order to respect the specifications

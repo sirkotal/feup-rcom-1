@@ -24,13 +24,24 @@
 
 int alarmEnabled = FALSE;
 int alarmCount = 0;
+int fd;
+unsigned char buf[BUF_SIZE];
+enum message_state {
+    START,
+    FLAG_RCV,
+    A_RCV,
+    C_RCV,
+    BCC_OK,
+    END
+};
+
 
 volatile int STOP = FALSE;
 
 // Alarm function handler
 void alarmHandler(int signal)
 {
-    alarmEnabled = FALSE;
+    int bytes = write(fd, buf, BUF_SIZE);
     alarmCount++;
 
     printf("Alarm #%d\n", alarmCount);
@@ -55,7 +66,7 @@ int main(int argc, char *argv[])
 
     // Open serial port device for reading and writing, and not as controlling tty
     // because we don't want to get killed if linenoise sends CTRL-C.
-    int fd = open(serialPortName, O_RDWR | O_NOCTTY);
+    fd = open(serialPortName, O_RDWR | O_NOCTTY);
 
     if (fd < 0)
     {
@@ -82,8 +93,8 @@ int main(int argc, char *argv[])
 
     // Set input mode (non-canonical, no echo,...)
     newtio.c_lflag = 0;
-    newtio.c_cc[VTIME] = 0.5; // Inter-character timer unused
-    newtio.c_cc[VMIN] = 0;  // Blocking read until 5 chars received
+    newtio.c_cc[VTIME] = 0; // Inter-character timer unused
+    newtio.c_cc[VMIN] = 5;  // Blocking read until 5 chars received
 
     // VTIME e VMIN should be changed in order to protect with a
     // timeout the reception of the following character(s)
@@ -108,7 +119,6 @@ int main(int argc, char *argv[])
     (void)signal(SIGALRM, alarmHandler);
 
     // Create string to send
-    unsigned char buf[BUF_SIZE];
 
     buf[0] = 0x7E;
     buf[1] = 0x03;
@@ -134,35 +144,69 @@ int main(int argc, char *argv[])
     // sleep(1);
     
     alarm(3);
+    int count = 0;
+    unsigned char byte;
+    enum message_state state = START;
+
 
     while (STOP == FALSE) {
-        int reception = read(fd, buf, BUF_SIZE);     
-        buf[reception] = '\0';
+        int reception = read(fd, &byte, 1);     
         
+        switch(state) {
+            case START:
+               if (byte == 0x7E)
+                  state = FLAG_RCV;
+               break;
+            case FLAG_RCV:
+               if (byte == 0x01)
+                  state = A_RCV;
+               else if (byte == 0x7E)
+                  state = FLAG_RCV;
+               else
+                  state = START;
+               break;
+            case A_RCV:
+               if (byte == 0x07)
+                  state = C_RCV;
+               else if (byte == 0x7E)
+                  state = FLAG_RCV;
+               else
+                  state = START;
+               break;
+            case C_RCV:
+               if (byte == 0x01^0x07)
+                  state = BCC_OK;
+               else if (buf[0] == 0x7E)
+                  state = FLAG_RCV;
+               else
+                  state = START;
+               break;
+            case BCC_OK:
+               if (byte == 0x7E) {
+                  state = END;
+                  STOP = TRUE;
+               }
+               else
+                  state = START;
+               break;
+            }
+        printf("state: %d",state);
+
+
         if (alarmCount == 4) {
             alarm(0);
             STOP = TRUE;
             printf("Program Terminated...\n");
         }
         
-        if (reception == 0) {
-            buf[0] = 0x7E;
-            buf[1] = 0x03;
-            buf[2] = 0x03;
-            buf[3] = buf[1]^buf[2];
-            buf[4] = 0x7E;
-            int bytes = write(fd, buf, BUF_SIZE);
-            continue;
-        }
-        
-        for (int i = 0; i < BUF_SIZE; i++) {
+        /*for (int i = 0; i < BUF_SIZE; i++) {
             printf("var = 0x%02X\n", (unsigned int)(buf[i] & 0xFF));
         }
 
         if (buf[1]^buf[2] == buf[3]) {
             printf("Connection Established...\n");
             STOP = TRUE;
-        }
+        }*/
     }
 
     // Restore the old port settings
