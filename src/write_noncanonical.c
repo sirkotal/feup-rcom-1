@@ -41,6 +41,7 @@ volatile int STOP = FALSE;
 // Alarm function handler
 void alarmHandler(int signal) {
    alarmEnabled = FALSE;
+   int bytes = write(fd, buf, BUF_SIZE);
    alarmCount++;
 
    printf("Alarm #%d\n", alarmCount);
@@ -141,7 +142,6 @@ int main(int argc, char *argv[])
    // sleep(1);
     
    while (alarmCount < 4) {
-      int bytes = write(fd, buf, BUF_SIZE);
       alarm(3);
       alarmEnabled = TRUE;
       int count = 0;
