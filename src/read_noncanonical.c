@@ -23,6 +23,15 @@
 
 volatile int STOP = FALSE;
 
+enum message_state {
+    START,
+    FLAG_RCV,
+    A_RCV,
+    C_RCV,
+    BCC_OK,
+    END
+};
+
 int main(int argc, char *argv[])
 {
     // Program usage: Uses either COM1 or COM2
@@ -90,49 +99,50 @@ int main(int argc, char *argv[])
 
     // Loop for input
     unsigned char buf[BUF_SIZE + 1] = {0}; // +1: Save space for the final '\0' char
-    int state = 0;
-    while (STOP == FALSE)
-    {
+    enum message_state state = START;
+
+    while (STOP == FALSE) {
         // Returns after 5 chars have been input
         int bytes = read(fd, buf, 1);
         buf[bytes] = '\0'; // Set end of string to '\0', so we can printf
         //printf("%s:%d\n", buf, bytes);
-        switch(state)
-            {
-                case 0:
-                  if (buf[0]==0x7E)
-                     state=1;
-                  break;
-                case 1:
-                  if (buf[0]==0x03)
-                     state=2;
-                  else if (buf[0]==0x7E)
-                     state=1;
-                  else
-                     state=0;
-                  break;
-                case 2:
-                  if (buf[0]==0x03)
-                     state=3;
-                  else if (buf[0]==0x7E)
-                     state=1;
-                  else
-                     state=0;
-                  break;
-                case 3:
-                  if (buf[0]==0x03^0x03)
-                     state=4;
-                  else if (buf[0]==0x7E)
-                     state=1;
-                  else
-                     state=0;
-                  break;
-                case 4:
-                  if (buf[0]==0x7E)
-                     STOP = TRUE;
-                  else
-                     state=0;
-                  break;
+        switch(state) {
+            case START:
+               if (buf[0] == 0x7E)
+                  state = FLAG_RCV;
+               break;
+            case FLAG_RCV:
+               if (buf[0] == 0x03)
+                  state = A_RCV;
+               else if (buf[0] == 0x7E)
+                  state = FLAG_RCV;
+               else
+                  state = START;
+               break;
+            case A_RCV:
+               if (buf[0] == 0x03)
+                  state = C_RCV;
+               else if (buf[0] == 0x7E)
+                  state = FLAG_RCV;
+               else
+                  state = START;
+               break;
+            case C_RCV:
+               if (buf[0] == 0x03^0x03)
+                  state = BCC_OK;
+               else if (buf[0] == 0x7E)
+                  state = FLAG_RCV;
+               else
+                  state = START;
+               break;
+            case BCC_OK:
+               if (buf[0] == 0x7E) {
+                  state = END;
+                  STOP = TRUE;
+               }
+               else
+                  state = START;
+               break;
             }
          printf("state: %d",state);
         /*for (int i = 0; i<BUF_SIZE; i++){
