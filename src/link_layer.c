@@ -305,7 +305,7 @@ int llopen(LinkLayer connectionParameters)
         llSetFrame();
     }
     else {
-        llUaFrame();
+         llUaFrame();
     }
     
     resetPortSettings();
@@ -318,7 +318,19 @@ int llopen(LinkLayer connectionParameters)
 ////////////////////////////////////////////////
 int llwrite(const unsigned char *buf, int bufSize)
 {
-    
+    unsigned char *frame = (unsigned char *)malloc(bufSize + 6);
+    frame[0] = 0x7E;
+    frame[1] = 0x03;
+    frame[2] = 0x00;
+    frame[3] = frame[1]^frame[2];
+    memcpy(frame+4, buf, bufSize);
+
+    unsigned char bcc_2;
+    bcc_2 = buf[0];
+    for (unsigned int i = 1 ; i < bufSize ; i++) {
+      bcc_2 ^= buf[i];
+    }
+
 
     return 0;
 }
