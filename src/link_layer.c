@@ -21,6 +21,7 @@
 int alarmEnabled = FALSE;
 int alarmCount = 0;
 int fd;
+struct termios oldtio;
 unsigned char buf[BUF_SIZE];
 enum message_state {
     START,
@@ -69,7 +70,6 @@ void establishSerialPort(LinkLayer connectionParameters) {
         exit(-1);
     }
 
-    struct termios oldtio;
     struct termios newtio;
 
     // Save current port settings
@@ -119,7 +119,7 @@ void establishSerialPort(LinkLayer connectionParameters) {
 
 void resetPortSettings() {
     // Restore the old port settings
-    if (tcsetattr(fd, TCSANOW, &oldtio) == -1)
+    if (tcsetattr(fd, TCSANOW, oldtio) == -1)
     {
         perror("tcsetattr");
         exit(-1);
@@ -328,7 +328,75 @@ int llwrite(const unsigned char *buf, int bufSize)
 ////////////////////////////////////////////////
 int llread(unsigned char *packet)
 {
-    // TODO
+    // Loop for input
+    unsigned char buf[BUF_SIZE + 1] = {0}; // +1: Save space for the final '\0' char
+    enum message_state state = START;
+    unsigned char byte;
+
+    while (STOP == FALSE) {
+        // Returns after 5 chars have been input
+        int bytes = read(fd, &byte, 1);
+         // Set end of string to '\0', so we can printf
+        //printf("%s:%d\n", buf, bytes);
+        switch(state) {
+            case START:
+               if (byte == 0x7E){
+                  state = FLAG_RCV;
+                  buf[START] = byte;
+                  }
+               break;
+            case FLAG_RCV:
+               if (byte == 0x03){
+                  state = A_RCV;
+                  buf[FLAG_RCV] = 0x01;}
+               else if (byte == 0x7E)
+                  state = FLAG_RCV;
+               else
+                  state = START;
+               break;
+            case A_RCV:
+               if (byte == 0x00 || byte == 0x40){
+                  state = C_RCV;
+                  buf[A_RCV] = 0x07;}
+               else if (byte == 0x7E)
+                  state = FLAG_RCV;
+               else
+                  state = START;
+               break;
+            case C_RCV:
+               if (byte == 0x03^0x00 || byte == 0x03^0x40){
+                  state = BCC_OK;
+                  buf[C_RCV] = buf[FLAG_RCV]^buf[A_RCV];}
+               else if (buf[0] == 0x7E)
+                  state = FLAG_RCV;
+               else
+                  state = START;
+               break;
+            case BCC_OK:
+               if (byte == 0x7E) {
+                  state = END;
+                  STOP = TRUE;
+                  buf[BCC_OK] = byte;
+               }
+               else
+                  state = START;
+               break;
+            }
+         printf("state: %d",state);
+        /*for (int i = 0; i<BUF_SIZE; i++){
+            printf("var = 0x%02X\n", (unsigned int)(buf[i] & 0xFF));
+        }*/
+        /*if (buf[1]^buf[2]==buf[3]){
+            STOP = TRUE;}*/
+               
+        //printf(":%s:%d\n", buf, bytes);
+        //if (buf[0] == 'z')
+          //  STOP = TRUE;
+    }
+    int bytes = write(fd, buf, BUF_SIZE);
+    printf("%d bytes written\n", bytes);
+    // The while() cycle should be changed in order to respect the specifications
+    // of the protocol indicated in the Lab guide
 
     return 0;
 }

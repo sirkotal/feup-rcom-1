@@ -66,11 +66,11 @@ int main(int argc, char *argv[])
 {
     printf("\n");
 
-    system("socat -dd PTY,link=/dev/ttyS10,mode=777 PTY,link=/dev/emulatorTx,mode=777 &");
+    system("socat -dd PTY,link=/dev/ttyS10,mode=777 PTY,link=/dev/ttyS11,mode=777 &");
     sleep(1);
     printf("\n");
 
-    system("socat -dd PTY,link=/dev/ttyS11,mode=777 PTY,link=/dev/emulatorRx,mode=777 &");
+    system("socat -dd PTY,link=/dev/ttyS11,mode=777 PTY,link=/dev/ttyS10,mode=777 &");
     sleep(1);
 
     printf("\n\n"
@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
     struct termios oldtioTx;
     struct termios newtioTx;
 
-    int fdTx = openSerialPort("/dev/emulatorTx", &oldtioTx, &newtioTx);
+    int fdTx = openSerialPort("/dev/ttyS10", &oldtioTx, &newtioTx);
 
     if (fdTx < 0)
     {
@@ -99,7 +99,7 @@ int main(int argc, char *argv[])
     struct termios oldtioRx;
     struct termios newtioRx;
 
-    int fdRx = openSerialPort("/dev/emulatorRx", &oldtioRx, &newtioRx);
+    int fdRx = openSerialPort("/dev/ttyS11", &oldtioRx, &newtioRx);
 
     if (fdRx < 0)
     {
