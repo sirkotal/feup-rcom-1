@@ -316,9 +316,22 @@ int llopen(LinkLayer connectionParameters)
 ////////////////////////////////////////////////
 // LLWRITE
 ////////////////////////////////////////////////
+void stuffing(unsigned char* frame, unsigned int* packet_location, unsigned char special) {
+   size_t frame_size = sizeof(frame) / sizeof(frame[0]);
+   frame = realloc(frame, ++frame_size);
+
+   frame[packet_location] = 0x7D;
+   packet_location++;
+
+   frame[packet_location] = special^0x20;
+   packet_location++;
+}
+
 int llwrite(const unsigned char *buf, int bufSize)
 {
-    unsigned char *frame = (unsigned char *)malloc(bufSize + 6);
+    unsigned char *frame;
+    frame = (unsigned char *)malloc(bufSize + 6);
+
     frame[0] = 0x7E;
     frame[1] = 0x03;
     frame[2] = 0x00;
@@ -331,9 +344,30 @@ int llwrite(const unsigned char *buf, int bufSize)
       bcc_2 ^= buf[i];
     }
 
+    unsigned int packet_loc = 4;
+
+    for (unsigned int i = 0 ; i < bufSize ; i++) {
+        if (buf[i] == 0x7E) {
+            stuffing(frame, &packet_loc, 0x7E);
+        }
+        else if (buf[i] == 0x7D) {
+            stuffing(frame, &packet_loc, 0x7D);
+        }
+        else {
+            frame[packet_loc] = buf[i];
+            packet_loc++;
+        }
+    }
+    frame[packet_loc] = bcc_2;
+    packet_loc++;
+
+    frame[packet_loc] = 0x7E;
+    packet_loc++;
 
     return 0;
 }
+
+
 
 ////////////////////////////////////////////////
 // LLREAD
