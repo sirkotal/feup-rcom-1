@@ -358,8 +358,17 @@ int llwrite(const unsigned char *buf, int bufSize)
             packet_loc++;
         }
     }
-    frame[packet_loc] = bcc_2;
-    packet_loc++;
+
+    if (bcc_2 == 0x7E) {
+      stuffing(frame, &packet_loc, 0x7E);
+    }
+    else if (bcc_2 == 0x7D) {
+      stuffing(frame, &packet_loc, 0x7D);
+    }
+    else {
+      frame[packet_loc] = bcc_2;
+      packet_loc++;
+    }
 
     frame[packet_loc] = 0x7E;
     packet_loc++;
