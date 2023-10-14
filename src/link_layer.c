@@ -364,7 +364,15 @@ int llwrite(const unsigned char *buf, int bufSize)
     frame[packet_loc] = 0x7E;
     packet_loc++;
 
-    return 0;
+    free(frame);
+    if ("SUCCESS") {
+      size_t frame_size = sizeof(frame) / sizeof(frame[0]);
+
+      return frame_size;
+    }
+    else {
+      return -1;
+    }
 }
 
 
