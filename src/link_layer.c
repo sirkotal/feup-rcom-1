@@ -310,7 +310,7 @@ int llopen(LinkLayer connectionParameters)
     
     resetPortSettings();
     
-    return 0;
+    return fd;
 }
 
 ////////////////////////////////////////////////
