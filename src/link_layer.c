@@ -21,6 +21,7 @@
 int alarmEnabled = FALSE;
 int alarmCount = 0;
 int fd;
+LinkLayerRole role;
 unsigned char buf[BUF_SIZE];
 enum message_state {
     START,
@@ -174,9 +175,7 @@ void llSetFrame() {
             case FLAG_RCV:
                if (byte == 0x01)
                   state = A_RCV;
-               else if (byte == 0x7E)
-                  state = FLAG_RCV;
-               else
+               else if (byte != 0x7E)
                   state = START;
                break;
             case A_RCV:
@@ -190,7 +189,7 @@ void llSetFrame() {
             case C_RCV:
                if (byte == 0x01^0x07)
                   state = BCC_OK;
-               else if (buf[0] == 0x7E)
+               else if (byte == 0x7E)
                   state = FLAG_RCV;
                else
                   state = START;
@@ -223,8 +222,7 @@ void llSetFrame() {
 }
 
 void llUaFrame() {
-    // Loop for input
-    unsigned char buf[BUF_SIZE + 1] = {0}; // +1: Save space for the final '\0' char
+    memset(buf, 0, BUF_SIZE);
     enum message_state state = START;
     unsigned char byte;
 
@@ -244,9 +242,7 @@ void llUaFrame() {
                if (byte == 0x03){
                   state = A_RCV;
                   buf[FLAG_RCV] = 0x01;}
-               else if (byte == 0x7E)
-                  state = FLAG_RCV;
-               else
+               else if (byte != 0x7E)
                   state = START;
                break;
             case A_RCV:
@@ -262,7 +258,7 @@ void llUaFrame() {
                if (byte == 0x03^0x03){
                   state = BCC_OK;
                   buf[C_RCV] = buf[FLAG_RCV]^buf[A_RCV];}
-               else if (buf[0] == 0x7E)
+               else if (byte == 0x7E)
                   state = FLAG_RCV;
                else
                   state = START;
@@ -307,9 +303,7 @@ int llopen(LinkLayer connectionParameters)
     else {
         llUaFrame();
     }
-    
-    resetPortSettings();
-    
+        
     return 0;
 }
 
@@ -337,8 +331,181 @@ int llread(unsigned char *packet)
 // LLCLOSE
 ////////////////////////////////////////////////
 int llclose(int showStatistics)
-{
-    // TODO
+{  
+
+    if (role == LlTx) {
+        llcloseTx();
+    }
+    else {
+        llcloseRx();
+    }
+
+    resetPortSettings();
 
     return 1;
+}
+
+void llcloseTx(){
+
+   buf[0] = 0x7E;
+   buf[1] = 0x03;
+   buf[2] = 0x0B;
+   buf[3] = buf[1]^buf[2];
+   buf[4] = 0x7E;
+
+   int bytes = write(fd, buf, BUF_SIZE);
+   printf("%d bytes written\n", bytes);
+   
+   alarm(3);
+   int count = 0;
+   unsigned char byte;
+   enum message_state state = START;
+
+   while (STOP == FALSE) {
+      int reception = read(fd, &byte, 1);     
+      
+      switch(state) {
+         case START:
+            if (byte == 0x7E)
+               state = FLAG_RCV;
+            break;
+         case FLAG_RCV:
+            if (byte == 0x01)
+               state = A_RCV;
+            else if (byte != 0x7E)
+               state = START;
+            break;
+         case A_RCV:
+            if (byte == 0x0B)
+               state = C_RCV;
+            else if (byte == 0x7E)
+               state = FLAG_RCV;
+            else
+               state = START;
+            break;
+         case C_RCV:
+            if (byte == 0x01^0x0B)
+               state = BCC_OK;
+            else if (byte == 0x7E)
+               state = FLAG_RCV;
+            else
+               state = START;
+            break;
+         case BCC_OK:
+            if (byte == 0x7E) {
+               state = END;
+               STOP = TRUE;
+            }
+            else
+               state = START;
+            break;
+      }   
+
+      if (alarmCount == 4) {
+         alarm(0);
+         STOP = TRUE;
+      }
+   }
+
+   buf[0] = 0x7E;
+   buf[1] = 0x03;
+   buf[2] = 0x07;
+   buf[3] = buf[1]^buf[2];
+   buf[4] = 0x7E;
+
+   int bytes = write(fd, buf, BUF_SIZE);
+}
+
+void llcloseRx(){
+   enum message_state state = START;
+   unsigned char byte;
+
+   while (STOP == FALSE) {
+      int bytes = read(fd, &byte, 1);
+
+      switch(state) {
+         case START:
+            if (byte == 0x7E)
+               state = FLAG_RCV;
+            break;
+         case FLAG_RCV:
+            if (byte == 0x03)
+               state = A_RCV;
+            else if (byte != 0x7E)
+               state = START;
+            break;
+         case A_RCV:
+            if (byte == 0x0B)
+               state = C_RCV;
+            else if (byte == 0x7E)
+               state = FLAG_RCV;
+            else
+               state = START;
+            break;
+         case C_RCV:
+            if (byte == 0x03^0x0B)
+               state = BCC_OK;
+            else if (byte == 0x7E)
+               state = FLAG_RCV;
+            else
+               state = START;
+            break;
+         case BCC_OK:
+            if (byte == 0x7E) {
+               state = END;
+               STOP = TRUE;
+            }
+            else
+               state = START;
+            break;
+         }
+   }
+   buf[0] = 0x7E;
+   buf[1] = 0x01;
+   buf[2] = 0x0B;
+   buf[3] = buf[1]^buf[2];
+   buf[4] = 0x7E;
+   int bytes = write(fd, buf, BUF_SIZE);
+   
+   while (STOP == FALSE) {
+      int bytes = read(fd, &byte, 1);
+
+      switch(state) {
+         case START:
+            if (byte == 0x7E)
+               state = FLAG_RCV;
+            break;
+         case FLAG_RCV:
+            if (byte == 0x03)
+               state = A_RCV;
+            else if (byte != 0x7E)
+               state = START;
+            break;
+         case A_RCV:
+            if (byte == 0x07)
+               state = C_RCV;
+            else if (byte == 0x7E)
+               state = FLAG_RCV;
+            else
+               state = START;
+            break;
+         case C_RCV:
+            if (byte == 0x03^0x07)
+               state = BCC_OK;
+            else if (byte == 0x7E)
+               state = FLAG_RCV;
+            else
+               state = START;
+            break;
+         case BCC_OK:
+            if (byte == 0x7E) {
+               state = END;
+               STOP = TRUE;
+            }
+            else
+               state = START;
+            break;
+         }
+   }
+   printf("%d bytes written\n", bytes);
 }
