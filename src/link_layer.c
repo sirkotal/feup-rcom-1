@@ -20,7 +20,7 @@
 
 int alarmEnabled = FALSE;
 int alarmCount = 0;
-int retransmitions = 0;
+int retransmissions;
 unsigned int trans_frame = 0;
 int fd;
 unsigned char buf[BUF_SIZE];
@@ -64,6 +64,8 @@ void establishSerialPort(LinkLayer connectionParameters) {
     // Open serial port device for reading and writing, and not as controlling tty
     // because we don't want to get killed if linenoise sends CTRL-C.
     fd = open(serialPortName, O_RDWR | O_NOCTTY);
+
+    retransmissions = connectionParameters.nRetransmissions;
 
     if (fd < 0)
     {
@@ -381,11 +383,11 @@ int llwrite(const unsigned char *buf, int bufSize)
     frame[packet_loc] = 0x7E;
     packet_loc++;
 
-    int n_transmition = 0;
+    int n_transmission = 0;
     bool accepted = FALSE;
     bool rejected = FALSE;
 
-    while (n_transmition < retransmitions) { 
+    while (n_transmission < retransmissions) { 
         alarmEnabled = FALSE;
         alarm(3);
         rejected = FALSE;
@@ -412,11 +414,11 @@ int llwrite(const unsigned char *buf, int bufSize)
         if (accepted) {
             break;
         } 
-        n_transmition++;
+        n_transmission++;
     }
 
     free(frame);
-    
+
     if (accepted) {
         size_t frame_size = sizeof(frame) / sizeof(frame[0]);
 
