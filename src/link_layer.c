@@ -397,7 +397,7 @@ int llwrite(const unsigned char *buf, int bufSize)
 
         while (alarmEnabled == FALSE && !accepted && !rejected) {
             write(fd, frame, packet_loc);
-            unsigned char cByte = controlFrameRead();
+            unsigned char cByte = supervisionFrameRead();
             
             if (cByte == 0x00) {
                 continue;
@@ -430,7 +430,7 @@ int llwrite(const unsigned char *buf, int bufSize)
     }
 }
 
-unsigned char controlFrameRead() {
+unsigned char supervisionFrameRead() {
     unsigned char byte;
     unsigned char cByte = 0;
     enum message_state state = START;
