@@ -20,6 +20,8 @@
 
 int alarmEnabled = FALSE;
 int alarmCount = 0;
+int retransmitions = 0;
+unsigned int trans_frame = 0;
 int fd;
 unsigned char buf[BUF_SIZE];
 enum message_state {
@@ -308,7 +310,7 @@ int llopen(LinkLayer connectionParameters)
          llUaFrame();
     }
     
-    resetPortSettings();
+    //resetPortSettings();
     
     return 0;
 }
@@ -334,6 +336,12 @@ int llwrite(const unsigned char *buf, int bufSize)
 
     frame[0] = 0x7E;
     frame[1] = 0x03;
+    if (trans_frame == 0) {
+        frame[2] = 0x00;
+    }
+    else if (trans_frame == 1) {
+        frame[2] = 0x40;
+    }
     frame[2] = 0x00;
     frame[3] = frame[1]^frame[2];
     memcpy(frame+4, buf, bufSize);
@@ -360,30 +368,64 @@ int llwrite(const unsigned char *buf, int bufSize)
     }
 
     if (bcc_2 == 0x7E) {
-      stuffing(frame, &packet_loc, 0x7E);
+        stuffing(frame, &packet_loc, 0x7E);
     }
     else if (bcc_2 == 0x7D) {
-      stuffing(frame, &packet_loc, 0x7D);
+        stuffing(frame, &packet_loc, 0x7D);
     }
     else {
-      frame[packet_loc] = bcc_2;
-      packet_loc++;
+        frame[packet_loc] = bcc_2;
+        packet_loc++;
     }
 
     frame[packet_loc] = 0x7E;
     packet_loc++;
 
-    free(frame);
-    if ("SUCCESS") {
-      size_t frame_size = sizeof(frame) / sizeof(frame[0]);
+    int n_transmition = 0;
+    bool accepted = FALSE;
+    bool rejected = FALSE;
 
-      return frame_size;
+    while (n_transmition < retransmitions) { 
+        alarmEnabled = FALSE;
+        alarm(3);
+        rejected = FALSE;
+        accepted = FALSE;
+        while (alarmEnabled == FALSE && !rejected && !accepted) {
+            write(fd, frame, packet_loc);
+            unsigned char result = controlFrameRead(fd);
+            
+            if (result == 0x00) {
+                continue;
+            }
+            else if (result == 0x05 || result == 0x85) {    // RR0 and RR1
+                accepted = TRUE;
+                trans_frame = 1 - trans_frame;
+            }
+            else if (result == 0x01 || result == 0x81) {   // REJ0 and REJ1
+                rejected = FALSE;
+            }
+            else {
+                continue;
+            }
+        }
+
+        if (accepted) {
+            break;
+        } 
+        n_transmition++;
+    }
+
+    free(frame);
+    
+    if (accepted) {
+        size_t frame_size = sizeof(frame) / sizeof(frame[0]);
+
+        return frame_size;
     }
     else {
-      return -1;
+        return -1;
     }
 }
-
 
 
 ////////////////////////////////////////////////
