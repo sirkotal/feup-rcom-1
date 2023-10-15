@@ -5,8 +5,13 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 LinkLayer parameters;
+
+unsigned char* createControlPacket(unsigned int ctrl, const char* filename, unsigned int* size) {
+
+}
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate, int nTries, int timeout, const char *filename) {
     strcpy(parameters.serialPort, serialPort);
@@ -31,10 +36,25 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
         // stuff to do
     }
     else if (parameters.role == LlTx) {
-        // more stuff to do
+        FILE *fptr;
+        unsigned int packet_size;
+        unsigned int start = 2;
+
+        fptr = fopen(filename, "rb");
+
+        if (fptr == NULL) {
+            perror("This file wasn't found\n");
+            exit(-1);
+        }
+
+        fseek(fptr, 0, SEEK_END);
+        // TODO
+
+        unsigned char *starterControlPacket = createControlPacket(start, fptr, &packet_size);
+
     }
     else {
-        perror("Unidentified Role");
+        perror("Unidentified Role\n");
         exit(-1);
     }
 }
