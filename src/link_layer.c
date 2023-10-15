@@ -389,6 +389,7 @@ int llwrite(const unsigned char *buf, int bufSize)
     bool rejected = FALSE;
 
     while (n_transmission < retransmissions) { 
+        // alarmCount = 0;  --> do we need the alarm loop in here?
         alarmEnabled = FALSE;
         alarm(3);
         rejected = FALSE;
