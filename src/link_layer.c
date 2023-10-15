@@ -242,12 +242,13 @@ void llUaFrame() {
                if (byte == 0x7E){
                   state = FLAG_RCV;
                   buf[START] = byte;
-                  }
+                }
                break;
             case FLAG_RCV:
                if (byte == 0x03){
                   state = A_RCV;
-                  buf[FLAG_RCV] = 0x01;}
+                  buf[FLAG_RCV] = 0x01;
+                }
                else if (byte == 0x7E)
                   state = FLAG_RCV;
                else
@@ -256,7 +257,8 @@ void llUaFrame() {
             case A_RCV:
                if (byte == 0x03){
                   state = C_RCV;
-                  buf[A_RCV] = 0x07;}
+                  buf[A_RCV] = 0x07;
+                }
                else if (byte == 0x7E)
                   state = FLAG_RCV;
                else
@@ -344,7 +346,6 @@ int llwrite(const unsigned char *buf, int bufSize)
     else if (trans_frame == 1) {
         frame[2] = 0x40;
     }
-    frame[2] = 0x00;
     frame[3] = frame[1]^frame[2];
     memcpy(frame+4, buf, bufSize);
 
@@ -392,18 +393,19 @@ int llwrite(const unsigned char *buf, int bufSize)
         alarm(3);
         rejected = FALSE;
         accepted = FALSE;
-        while (alarmEnabled == FALSE && !rejected && !accepted) {
+
+        while (alarmEnabled == FALSE && !accepted && !rejected) {
             write(fd, frame, packet_loc);
-            unsigned char result = controlFrameRead(fd);
+            unsigned char cByte = controlFrameRead();
             
-            if (result == 0x00) {
+            if (cByte == 0x00) {
                 continue;
             }
-            else if (result == 0x05 || result == 0x85) {    // RR0 and RR1
-                accepted = TRUE;
+            else if (cByte == 0x05 || cByte == 0x85) {    // RR0 and RR1
                 trans_frame = 1 - trans_frame;
+                accepted = TRUE;
             }
-            else if (result == 0x01 || result == 0x81) {   // REJ0 and REJ1
+            else if (cByte == 0x01 || cByte == 0x81) {   // REJ0 and REJ1
                 rejected = FALSE;
             }
             else {
@@ -420,15 +422,74 @@ int llwrite(const unsigned char *buf, int bufSize)
     free(frame);
 
     if (accepted) {
-        size_t frame_size = sizeof(frame) / sizeof(frame[0]);
-
-        return frame_size;
+        return packet_loc;
     }
     else {
         return -1;
     }
 }
 
+unsigned char controlFrameRead() {
+    unsigned char byte;
+    unsigned char cByte = 0;
+    enum message_state state = START;
+    
+    while (state != END && alarmEnabled == FALSE) {  
+        read(fd, &byte, 1);
+        switch (state) {
+            case START:
+                if (byte == 0x7E) {
+                    state = FLAG_RCV;
+                }    
+                break;
+            case FLAG_RCV:
+                if (byte == 0x01) {
+                    state = A_RCV;
+                }
+                else if (byte == 0x7E) {
+                    state = FLAG_RCV;
+                }  
+                else {
+                    state = START;
+                }  
+                break;
+            case A_RCV:
+                if (byte == 0x05 || byte == 0x85 || byte == 0x01 || byte == 0x81 || byte == 0x0B) {   // RR0,RR1, REJ0, REJ1, DISC
+                    state = C_RCV;
+                    cByte = byte;   
+                }
+                else if (byte == 0x7E) {
+                    state = FLAG_RCV;
+                }
+                else {
+                    state = START;
+                }
+                break;
+            case C_RCV:
+                if (byte == (0x01^cByte)) {
+                    state = BCC_OK;
+                }
+                else if (byte == 0x7E) {
+                    state = FLAG_RCV;
+                }
+                else {
+                    state = START;
+                }
+                break;
+            case BCC_OK:
+                if (byte == 0x7E){
+                    state = END;
+                }
+                else {
+                    state = START;
+                }
+                break;
+            default: 
+                break;
+        }
+    } 
+    return cByte;
+}
 
 ////////////////////////////////////////////////
 // LLREAD
