@@ -783,4 +783,3 @@ int llclose(int showStatistics)
 
     return 1;
 }
-
