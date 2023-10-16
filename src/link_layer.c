@@ -298,7 +298,8 @@ void llUaFrame() {
 // LLOPEN
 ////////////////////////////////////////////////
 int llopen(LinkLayer connectionParameters)
-{  
+{    
+   printf("a entrar open\n");
    establishSerialPort(connectionParameters);
    if (connectionParameters.role == LlTx) {
       llSetFrame();
