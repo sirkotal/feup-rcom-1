@@ -20,6 +20,8 @@
 
 int alarmEnabled = FALSE;
 int alarmCount = 0;
+int retransmissions;
+unsigned int trans_frame = 0;
 int fd;
 unsigned char buf[BUF_SIZE];
 enum message_state {
@@ -62,6 +64,8 @@ void establishSerialPort(LinkLayer connectionParameters) {
     // Open serial port device for reading and writing, and not as controlling tty
     // because we don't want to get killed if linenoise sends CTRL-C.
     fd = open(serialPortName, O_RDWR | O_NOCTTY);
+
+    retransmissions = connectionParameters.nRetransmissions;
 
     if (fd < 0)
     {
@@ -238,12 +242,13 @@ void llUaFrame() {
                if (byte == 0x7E){
                   state = FLAG_RCV;
                   buf[START] = byte;
-                  }
+                }
                break;
             case FLAG_RCV:
                if (byte == 0x03){
                   state = A_RCV;
-                  buf[FLAG_RCV] = 0x01;}
+                  buf[FLAG_RCV] = 0x01;
+                }
                else if (byte == 0x7E)
                   state = FLAG_RCV;
                else
@@ -252,7 +257,8 @@ void llUaFrame() {
             case A_RCV:
                if (byte == 0x03){
                   state = C_RCV;
-                  buf[A_RCV] = 0x07;}
+                  buf[A_RCV] = 0x07;
+                }
                else if (byte == 0x7E)
                   state = FLAG_RCV;
                else
@@ -305,10 +311,10 @@ int llopen(LinkLayer connectionParameters)
         llSetFrame();
     }
     else {
-        llUaFrame();
+         llUaFrame();
     }
     
-    resetPortSettings();
+    //resetPortSettings();
     
     return 0;
 }
@@ -316,11 +322,174 @@ int llopen(LinkLayer connectionParameters)
 ////////////////////////////////////////////////
 // LLWRITE
 ////////////////////////////////////////////////
+void stuffing(unsigned char* frame, unsigned int* packet_location, unsigned char special) {
+   size_t frame_size = sizeof(frame) / sizeof(frame[0]);
+   frame = realloc(frame, ++frame_size);
+
+   frame[packet_location] = 0x7D;
+   packet_location++;
+
+   frame[packet_location] = special^0x20;
+   packet_location++;
+}
+
 int llwrite(const unsigned char *buf, int bufSize)
 {
-    
+    unsigned char *frame;
+    frame = (unsigned char *)malloc(bufSize + 6);
 
-    return 0;
+    frame[0] = 0x7E;
+    frame[1] = 0x03;
+    if (trans_frame == 0) {
+        frame[2] = 0x00;
+    }
+    else if (trans_frame == 1) {
+        frame[2] = 0x40;
+    }
+    frame[3] = frame[1]^frame[2];
+    memcpy(frame+4, buf, bufSize);
+
+    unsigned char bcc_2;
+    bcc_2 = buf[0];
+    for (unsigned int i = 1 ; i < bufSize ; i++) {
+      bcc_2 ^= buf[i];
+    }
+
+    unsigned int packet_loc = 4;
+
+    for (unsigned int i = 0 ; i < bufSize ; i++) {
+        if (buf[i] == 0x7E) {
+            stuffing(frame, &packet_loc, 0x7E);
+        }
+        else if (buf[i] == 0x7D) {
+            stuffing(frame, &packet_loc, 0x7D);
+        }
+        else {
+            frame[packet_loc] = buf[i];
+            packet_loc++;
+        }
+    }
+
+    if (bcc_2 == 0x7E) {
+        stuffing(frame, &packet_loc, 0x7E);
+    }
+    else if (bcc_2 == 0x7D) {
+        stuffing(frame, &packet_loc, 0x7D);
+    }
+    else {
+        frame[packet_loc] = bcc_2;
+        packet_loc++;
+    }
+
+    frame[packet_loc] = 0x7E;
+    packet_loc++;
+
+    int n_transmission = 0;
+    bool accepted = FALSE;
+    bool rejected = FALSE;
+
+    while (n_transmission < retransmissions) { 
+        // alarmCount = 0;  --> do we need the alarm loop in here?
+        alarmEnabled = FALSE;
+        alarm(3);
+        rejected = FALSE;
+        accepted = FALSE;
+
+        while (alarmEnabled == FALSE && !accepted && !rejected) {
+            write(fd, frame, packet_loc);
+            unsigned char cByte = supervisionFrameRead();
+            
+            if (cByte == 0x00) {
+                continue;
+            }
+            else if (cByte == 0x05 || cByte == 0x85) {    // RR0 and RR1
+                trans_frame = 1 - trans_frame;
+                accepted = TRUE;
+            }
+            else if (cByte == 0x01 || cByte == 0x81) {   // REJ0 and REJ1
+                rejected = FALSE;
+            }
+            else {
+                continue;
+            }
+        }
+
+        if (accepted) {
+            break;
+        } 
+        n_transmission++;
+    }
+
+    free(frame);
+
+    if (accepted) {
+        return packet_loc;
+    }
+    else {
+        return -1;
+    }
+}
+
+unsigned char supervisionFrameRead() {
+    unsigned char byte;
+    unsigned char cByte = 0;
+    enum message_state state = START;
+    
+    while (state != END && alarmEnabled == FALSE) {  
+        read(fd, &byte, 1);
+        switch (state) {
+            case START:
+                if (byte == 0x7E) {
+                    state = FLAG_RCV;
+                }    
+                break;
+            case FLAG_RCV:
+                if (byte == 0x01) {
+                    state = A_RCV;
+                }
+                else if (byte == 0x7E) {
+                    state = FLAG_RCV;
+                }  
+                else {
+                    state = START;
+                }  
+                break;
+            case A_RCV:
+                if (byte == 0x05 || byte == 0x85 || byte == 0x01 || byte == 0x81 || byte == 0x0B) {   // RR0,RR1, REJ0, REJ1, DISC
+                    state = C_RCV;
+                    cByte = byte;   
+                }
+                else if (byte == 0x7E) {
+                    state = FLAG_RCV;
+                }
+                else {
+                    state = START;
+                }
+                break;
+            case C_RCV:
+                if (byte == (0x01^cByte)) {
+                    state = BCC_OK;
+                }
+                else if (byte == 0x7E) {
+                    state = FLAG_RCV;
+                }
+                else {
+                    state = START;
+                }
+                break;
+            case BCC_OK:
+                if (byte == 0x7E){
+                    state = END;
+                }
+                else {
+                    state = START;
+                }
+                break;
+            default: 
+                break;
+        }
+    } 
+    return cByte;
 }
 
 ////////////////////////////////////////////////
