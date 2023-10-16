@@ -36,8 +36,9 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
         int namesize = control[5+control[2]];
         unsigned char name[namesize];
         memcpy(name,control+5+control[2], namesize);
-        name[namesize]='\0';
         printf("Name: %s\n", name);
+        unsigned char data[MAX_PAYLOAD_SIZE];
+        llread(data);
     }
     else if (parameters.role == LlTx) {
         FILE *fptr;
@@ -53,6 +54,9 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
 
         fseek(fptr, 0, SEEK_END);
         int len = ftell(fptr);
+        unsigned char data[len];
+        fseek(fptr, 0, SEEK_SET);
+        fread(data, sizeof(unsigned char), len, fptr);
         int tmp = len;
         int lensize = 0;
         while (tmp > 0){
@@ -66,19 +70,35 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
         control[i++] = 2;
         control[i++] = 0;
         control[i] = lensize; //or i++ but then i-1 + lensize
-        printf("%d\n", len);
+        tmp = len;
         for (int j = i + lensize; j > i; j--){
             printf("J:%d\n", j);
-            control[j] = len & 0xFF;
+            control[j] = tmp & 0xFF;
             printf("control:%d\n", control[j]);
-            len >>= 8;
-            printf("len:%d\n", len);
+            tmp >>= 8;
+            printf("len:%d\n", tmp);
         }
         i+=lensize+1;
         control[i++] = 1;
         control[i++] = namesize;
         memcpy(control+i,filename,namesize);
         llwrite(control, size);
+
+        int bytesleft = len;
+        int datasize;
+        unsigned char data_packet[MAX_PAYLOAD_SIZE];
+        data_packet[0] = 1;
+        if (bytesleft > MAX_PAYLOAD_SIZE)
+            datasize = MAX_PAYLOAD_SIZE;
+        else
+            datasize = bytesleft;
+        
+        data_packet[1] = datasize >> 8 & 0xFF;
+        data_packet[2] = datasize & 0xFF;
+        
+        memcpy(data_packet+3, data, datasize-3);
+        printf("data %d", datasize);
+        llwrite(data_packet, datasize);
         fclose(fptr);
     }
     else {

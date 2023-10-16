@@ -402,7 +402,6 @@ int llwrite(const unsigned char *buf, int bufSize)
    }
    frame[3] = frame[1]^frame[2];
    memcpy(frame+4, buf, bufSize);
-
    unsigned char bcc_2;
    bcc_2 = buf[0];
    for (unsigned int i = 1 ; i < bufSize ; i++) {
@@ -554,7 +553,7 @@ int llread(unsigned char *packet)
                   buf[3]=buf[1]^buf[2];
                   buf[4]=0x7E;
                   write(fd,buf,BUF_SIZE);
-                  packet[size] = '/0'; 
+                  packet[size] = '\0'; 
                   printf("left llread nice\n");
                   return size;
                }
@@ -568,8 +567,7 @@ int llread(unsigned char *packet)
                   buf[3]=buf[1]^buf[2];
                   buf[4]=0x7E;
                   write(fd,buf,BUF_SIZE);
-                  packet[size-1] = '/0';
-                  printf("packed %s", packet); 
+                  packet[size-1] = '\0';
                   printf("left llread\n");
                   return -1;
                }
