@@ -390,9 +390,9 @@ unsigned char supervisionFrameRead() {
 int llwrite(const unsigned char *buf, int bufSize)
 {  
    printf("entered llwrite\n");
-   unsigned char *frame;
-   frame = (unsigned char *)malloc(bufSize + 6);
+   unsigned char *frame = (unsigned char *)malloc(bufSize + 6);
    frame[0] = 0x7E;
+   printf("não bugou");
    frame[1] = 0x03;
    if (trans_frame == 0) {
       frame[2] = 0x00;
@@ -497,7 +497,7 @@ int llread(unsigned char *packet)
    STOP = FALSE;
    while (STOP == FALSE) {
       int bytes = read(fd, &byte, 1);
-      printf("var = 0x%02X\n", (unsigned int)(byte & 0xFF));
+      //printf("var = 0x%02X\n", (unsigned int)(byte & 0xFF));
       unsigned char buf[BUF_SIZE];
       switch(state) {
          case START:
