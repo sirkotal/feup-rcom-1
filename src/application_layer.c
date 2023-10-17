@@ -39,7 +39,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
         name[0] = 'T';
         //printf("Name: %s\n", name);
         //to do later
-        FILE *fptr = fopen("tenguin.gif", "w+");
+        FILE *fptr = fopen("tenguin.gif", "wb+");
         int bytes = 0;
         int reada = 1;
         int bytesread = 0;
@@ -53,6 +53,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
             //int cur = ftell(fptr);
             //printf("data: %d\n", reada-3);
             fwrite(data+3, 1, reada-3, fptr);
+            fflush(fptr);
         }
 
 
