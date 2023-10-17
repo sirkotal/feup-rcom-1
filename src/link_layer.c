@@ -315,14 +315,10 @@ int llopen(LinkLayer connectionParameters)
 // LLWRITE
 ////////////////////////////////////////////////
 void stuffing(unsigned char* frame, unsigned int packet_location, unsigned char special) {
-   size_t frame_size = sizeof(frame) / sizeof(frame[0]);
-   frame = realloc(frame, ++frame_size);
-
+   //size_t frame_size = sizeof(frame) / sizeof(frame[0]);
+   //frame = realloc(frame, ++frame_size);
    frame[packet_location] = 0x7D;
-   packet_location++;
-
-   frame[packet_location] = special^0x20;
-   packet_location++;
+   frame[packet_location+1] = special^0x20;
 }
 
 unsigned char supervisionFrameRead() {
@@ -389,10 +385,13 @@ unsigned char supervisionFrameRead() {
 
 int llwrite(const unsigned char *buf, int bufSize)
 {  
+   /*for(int m = 0; m<bufSize; m++){
+      printf("recebi = 0x%02X\n", (unsigned int)(buf[m] & 0xFF));
+   }*/
    printf("entered llwrite\n");
-   unsigned char *frame = (unsigned char *)malloc(bufSize + 6);
+   unsigned char frame[2050];
+   memset(frame, 0, bufSize+6);
    frame[0] = 0x7E;
-   printf("não bugou");
    frame[1] = 0x03;
    if (trans_frame == 0) {
       frame[2] = 0x00;
@@ -401,7 +400,7 @@ int llwrite(const unsigned char *buf, int bufSize)
       frame[2] = 0x40;
    }
    frame[3] = frame[1]^frame[2];
-   memcpy(frame+4, buf, bufSize);
+   //memcpy(frame+4, buf, bufSize);
    unsigned char bcc_2;
    bcc_2 = buf[0];
    for (unsigned int i = 1 ; i < bufSize ; i++) {
@@ -411,43 +410,51 @@ int llwrite(const unsigned char *buf, int bufSize)
 
    for (unsigned int i = 0 ; i < bufSize ; i++) {
       if (buf[i] == 0x7E) {
-         stuffing(frame, &packet_loc, 0x7E);
+         stuffing(frame, packet_loc, 0x7E);
+         packet_loc++;
       }
       else if (buf[i] == 0x7D) {
-         stuffing(frame, &packet_loc, 0x7D);
+         stuffing(frame, packet_loc, 0x7D);
+         packet_loc++;
       }
       else {
          frame[packet_loc] = buf[i];
-         packet_loc++;
       }
+      //printf("recebi = 0x%02X\n", (unsigned int)(frame[packet_loc] & 0xFF));
+      //printf("mandei = 0x%02X\n", (unsigned int)(buf[i] & 0xFF));
+      packet_loc++;
    }
 
    if (bcc_2 == 0x7E) {
-      stuffing(frame, &packet_loc, 0x7E);
+      stuffing(frame, packet_loc, 0x7E);
+      packet_loc+=2;
    }
    else if (bcc_2 == 0x7D) {
-      stuffing(frame, &packet_loc, 0x7D);
+      stuffing(frame, packet_loc, 0x7D);
+      packet_loc+=2;
    }
    else {
       frame[packet_loc] = bcc_2;
       packet_loc++;
    }
-
+   //printf("packet_loc %d\n", packet_loc);
    frame[packet_loc] = 0x7E;
    packet_loc++;
+
 
    int n_transmission = 0;
    int accepted = FALSE;
    int rejected = FALSE;
-
+   
+   
    while (n_transmission < retransmissions) { 
       // alarmCount = 0;  --> do we need the alarm loop in here?
       alarmEnabled = FALSE;
-      alarm(3);
+      //alarm(3);
       rejected = FALSE;
       accepted = FALSE;
 
-      while (alarmEnabled == FALSE && !accepted && !rejected) {
+      while (/*alarmEnabled == FALSE &&*/ !accepted && !rejected) {
          write(fd, frame, packet_loc);
          unsigned char cByte = supervisionFrameRead();
          
@@ -472,8 +479,6 @@ int llwrite(const unsigned char *buf, int bufSize)
       n_transmission++;
    }
 
-   free(frame);
-
    if (accepted) {
       printf("left llwrite nicely\n");
       return packet_loc;
@@ -490,6 +495,7 @@ int llwrite(const unsigned char *buf, int bufSize)
 int llread(unsigned char *packet)
 {  
    printf("enter llread\n");
+   unsigned char tmp[2050];
    enum message_state state = START;
    unsigned char byte;
    int bcc = 0;
@@ -498,7 +504,6 @@ int llread(unsigned char *packet)
    while (STOP == FALSE) {
       int bytes = read(fd, &byte, 1);
       //printf("var = 0x%02X\n", (unsigned int)(byte & 0xFF));
-      unsigned char buf[BUF_SIZE];
       switch(state) {
          case START:
             if (byte == 0x7E){
@@ -525,7 +530,7 @@ int llread(unsigned char *packet)
             if (byte == 0x03^0x00 || byte == 0x03^0x40){
                state = BCC_OK;
                }
-            else if (buf[0] == 0x7E)
+            else if (byte == 0x7E)
                state = FLAG_RCV;
             else
                state = START;
@@ -535,14 +540,17 @@ int llread(unsigned char *packet)
                state = ESC;
             else if (byte == 0x7E){
                int bcc;
-               size--;
-               for (int i = 0; i < size; i++){
-                  if (i == 0)
-                     bcc = packet[i];
-                  else
-                     bcc ^= packet[i];
+               size-=1;
+               //printf("normal = 0x%02X\n", (unsigned int)(packet[size] & 0xFF));
+               bcc = tmp[0];
+               for (unsigned int i = 1 ; i < size; i++) {
+                  //printf("normal = 0x%02X\n", (unsigned int)(tmp[i] & 0xFF));
+                  bcc ^= tmp[i];
                }
-               if (bcc == packet[size]){
+               printf("bcc %d", bcc);
+               printf("bc %d", tmp[size]);
+               if (bcc == tmp[size]){
+                  memcpy(packet,tmp,MAX_PAYLOAD_SIZE);
                   state = STOP;
                   buf[0]=0x7E;
                   buf[1]=0x01;
@@ -552,8 +560,8 @@ int llread(unsigned char *packet)
                      buf[2]=0x85;
                   buf[3]=buf[1]^buf[2];
                   buf[4]=0x7E;
-                  write(fd,buf,BUF_SIZE);
-                  packet[size] = '\0'; 
+                  write(fd,buf,BUF_SIZE); 
+                  printf("size: %d\n", size);
                   printf("left llread nice\n");
                   return size;
                }
@@ -567,33 +575,27 @@ int llread(unsigned char *packet)
                   buf[3]=buf[1]^buf[2];
                   buf[4]=0x7E;
                   write(fd,buf,BUF_SIZE);
-                  packet[size-1] = '\0';
                   printf("left llread\n");
                   return -1;
                }
 
             }
             else {
-               packet[size] = byte;
+               tmp[size] = byte;
                size++;
             }
             break;
          case ESC:
             state = BCC_OK;
             if (byte == 0x5E){
-               packet[size]==0x7E;
+               tmp[size]=0x7E;
                size++;
             }
             else if (byte == 0x5D){
-               packet[size] == 0x7D;
+               tmp[size]=0x7D;
                size++;
             }
-            else{
-               packet[size]==0x7D;
-               size++;
-               packet[size]==byte;
-               size++;
-            }
+            break;
       }
    }
    return 0;

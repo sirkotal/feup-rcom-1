@@ -33,22 +33,26 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
                 size <<= 8;
         }    
         printf("J:%d\n", size);
-        int namesize = control[5+control[2]];
+        int namesize = control[4+control[2]];
         unsigned char name[namesize];
         memcpy(name,control+5+control[2], namesize);
         name[0] = 'T';
-        printf("Name: %s\n", name);
-        unsigned char data[MAX_PAYLOAD_SIZE];    
-        FILE *fptr = fopen(name, "wb+");
+        //printf("Name: %s\n", name);
+        //to do later
+        FILE *fptr = fopen("tenguin.gif", "w+");
         int bytes = 0;
-        int reada = 0;
-        while(bytes < 10968){
-            bytes+=200;
+        int reada = 1;
+        int bytesread = 0;
+        unsigned char data[MAX_PAYLOAD_SIZE];    
+        while(reada > 0){
             reada = llread(data);
             for (int k = 0; k < reada; k++){
                 printf("data = 0x%02X\n", (unsigned int)(data[k] & 0xFF));
             }
-            fwrite(data+3, sizeof(unsigned char), reada, fptr);
+            bytesread += reada;
+            //int cur = ftell(fptr);
+            //printf("data: %d\n", reada-3);
+            fwrite(data+3, 1, reada-3, fptr);
         }
 
 
@@ -67,9 +71,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
 
         fseek(fptr, 0, SEEK_END);
         int len = ftell(fptr);
-        unsigned char *data = (unsigned char*) malloc (len);
         fseek(fptr, 0, SEEK_SET);
-        fread(data, sizeof(unsigned char), len, fptr);
         /*for (int k = 0; k< len; k++){
             printf("var = 0x%02X\n", (unsigned int)(data[k] & 0xFF));
         }*/
@@ -88,38 +90,42 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
         control[i] = lensize; //or i++ but then i-1 + lensize
         tmp = len;
         for (int j = i + lensize; j > i; j--){
-            printf("J:%d\n", j);
+            //printf("J:%d\n", j);
             control[j] = tmp & 0xFF;
-            printf("control:%d\n", control[j]);
+            //printf("control:%d\n", control[j]);
             tmp >>= 8;
-            printf("len:%d\n", tmp);
+            //printf("len:%d\n", tmp);
         }
-        printf(" data :%d\n", data[194]);
+        //printf(" data :%d\n", data[194]);
         i+=lensize+1;
         control[i++] = 1;
         control[i++] = namesize;
         memcpy(control+i,filename,namesize);
         llwrite(control, size);
-        int bytesread = 0;
         int bytesleft = len;
         int datasize;
+        unsigned char data[MAX_PAYLOAD_SIZE-3];
         unsigned char data_packet[MAX_PAYLOAD_SIZE];
         while (bytesleft > 0){
             data_packet[0] = 1;
-            if (bytesleft > MAX_PAYLOAD_SIZE){
-                datasize = MAX_PAYLOAD_SIZE;
+            if (bytesleft > MAX_PAYLOAD_SIZE-3){
+                datasize = MAX_PAYLOAD_SIZE-3;
                 bytesleft -= datasize;}
             else{
                 datasize = bytesleft;
                 bytesleft -= datasize;}
+            fread(data, 1, datasize, fptr);
             data_packet[1] = datasize >> 8 & 0xFF;
             data_packet[2] = datasize & 0xFF;
-           memcpy(data_packet + 3, data, datasize - 3);
-            llwrite(data_packet, datasize);
+            memcpy(data_packet + 3, data, datasize);
+            /*for(int m = 0; m<datasize; m++){
+               printf("mandei = 0x%02X\n", (unsigned int)(data_packet[m] & 0xFF));
+            }*/
+            printf("size: %d\n", datasize);
+            llwrite(data_packet, datasize+3);
         }
         printf("left loop");
         fclose(fptr);
-        free(data);
     }
     else {
         perror("Unidentified Role\n");
