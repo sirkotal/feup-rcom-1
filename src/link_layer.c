@@ -44,12 +44,10 @@ volatile int STOP = FALSE;
 // Alarm function handler
 void alarmHandler(int signal)
 {
-    int bytes = write(fd, buf, BUF_SIZE);
-    alarmCount++;
-
-    printf("Alarm #%d\n", alarmCount);
+   alarmCount++;
+   alarm(3);
+    //printf("Alarm #%d\n", alarmCount);
     //talvez fazer verificação aqui
-    alarm(3);
 }
 
 void establishSerialPort(LinkLayer connectionParameters) {
@@ -137,92 +135,75 @@ void resetPortSettings() {
 }
 
 void llSetFrame() {
-    // Set alarm function handler
-    (void)signal(SIGALRM, alarmHandler);
+   // Set alarm function handler
+   (void)signal(SIGALRM, alarmHandler);
 
-    // Create string to send
+   buf[0] = 0x7E;
+   buf[1] = 0x03;
+   buf[2] = 0x03;
+   buf[3] = buf[1]^buf[2];
+   buf[4] = 0x7E;
+   
+   int bytes = write(fd, buf, BUF_SIZE);
+   printf("%d bytes written\n", bytes);
+   
+   alarm(3);
+   int count = 0;
+   unsigned char byte;
+   enum message_state state = START;
 
-    buf[0] = 0x7E;
-    buf[1] = 0x03;
-    buf[2] = 0x03;
-    buf[3] = buf[1]^buf[2];
-    buf[4] = 0x7E;
-
-    /*
-    for (int i = 0; i < BUF_SIZE; i++)
-    {
-        buf[i] = 'a' + i % 26;
-    }
-
-    // In non-canonical mode, '\n' does not end the writing.
-    // Test this condition by placing a '\n' in the middle of the buffer.
-    // The whole buffer must be sent even with the '\n'.
-    buf[5] = '\n';*/
-
-    int bytes = write(fd, buf, BUF_SIZE);
-    printf("%d bytes written\n", bytes);
-
-    // Wait until all bytes have been written to the serial port
-    // sleep(1);
-    
-    alarm(3);
-    int count = 0;
-    unsigned char byte;
-    enum message_state state = START;
-
-
-    while (STOP == FALSE) {
-        int reception = read(fd, &byte, 1);     
-        
-        switch(state) {
-            case START:
-               if (byte == 0x7E)
-                  state = FLAG_RCV;
-               break;
-            case FLAG_RCV:
-               if (byte == 0x01)
-                  state = A_RCV;
-               else if (byte != 0x7E)
-                  state = START;
-               break;
-            case A_RCV:
-               if (byte == 0x07)
-                  state = C_RCV;
-               else if (byte == 0x7E)
-                  state = FLAG_RCV;
-               else
-                  state = START;
-               break;
-            case C_RCV:
-               if (byte == 0x01^0x07)
-                  state = BCC_OK;
-               else if (byte == 0x7E)
-                  state = FLAG_RCV;
-               else
-                  state = START;
-               break;
-            case BCC_OK:
-               if (byte == 0x7E) {
-                  state = END;
-                  STOP = TRUE;
-                  printf("Connection Established...\n");
-               }
-               else
-                  state = START;
-               break;
+   while (STOP == FALSE) {
+      int reception = read(fd, &byte, 1);     
+      
+      switch(state) {
+         case START:
+            if (byte == 0x7E)
+               state = FLAG_RCV;
+            break;
+         case FLAG_RCV:
+            if (byte == 0x01)
+               state = A_RCV;
+            else if (byte != 0x7E)
+               state = START;
+            break;
+         case A_RCV:
+            if (byte == 0x07)
+               state = C_RCV;
+            else if (byte == 0x7E)
+               state = FLAG_RCV;
+            else
+               state = START;
+            break;
+         case C_RCV:
+            if (byte == 0x01^0x07)
+               state = BCC_OK;
+            else if (byte == 0x7E)
+               state = FLAG_RCV;
+            else
+               state = START;
+            break;
+         case BCC_OK:
+            if (byte == 0x7E) {
+               state = END;
+               STOP = TRUE;
+               printf("Connection Established...\n");
             }
+            else
+               state = START;
+            break;
+         }
 
-        if (alarmCount == 4) {
-            alarm(0);
-            STOP = TRUE;
-            printf("Program Terminated...\n");
-        }
-        
-        /*for (int i = 0; i < BUF_SIZE; i++) {
-            printf("var = 0x%02X\n", (unsigned int)(buf[i] & 0xFF));
-        }*/
+      if (alarmCount == 4) {
+         alarm(0);
+         STOP = TRUE;
+         printf("Program Terminated...\n");
+      }
+      
+      /*for (int i = 0; i < BUF_SIZE; i++) {
+         printf("var = 0x%02X\n", (unsigned int)(buf[i] & 0xFF));
+      }*/
 
-    }
+   }
 }
 
 void llUaFrame() {
@@ -314,131 +295,125 @@ int llopen(LinkLayer connectionParameters)
 ////////////////////////////////////////////////
 // LLWRITE
 ////////////////////////////////////////////////
-void stuffing(unsigned char* frame, unsigned int packet_location, unsigned char special) {
-   //size_t frame_size = sizeof(frame) / sizeof(frame[0]);
-   //frame = realloc(frame, ++frame_size);
+void stuffing(unsigned char* frame, unsigned int packet_location, unsigned char special, unsigned int *size) {
+   frame = realloc(frame, ++(*size));
    frame[packet_location] = 0x7D;
    frame[packet_location+1] = special^0x20;
 }
 
-unsigned char supervisionFrameRead() {
-    unsigned char byte;
-    unsigned char cByte = 0;
-    enum message_state state = START;
-    
-    while (state != END && alarmEnabled == FALSE) {  
-        read(fd, &byte, 1);
-        switch (state) {
-            case START:
-                if (byte == 0x7E) {
-                    state = FLAG_RCV;
-                }    
-                break;
-            case FLAG_RCV:
-                if (byte == 0x01) {
-                    state = A_RCV;
-                }
-                else if (byte == 0x7E) {
-                    state = FLAG_RCV;
-                }  
-                else {
-                    state = START;
-                }  
-                break;
-            case A_RCV:
-                if (byte == 0x05 || byte == 0x85 || byte == 0x01 || byte == 0x81 || byte == 0x0B) {   // RR0,RR1, REJ0, REJ1, DISC
-                    state = C_RCV;
-                    cByte = byte;   
-                }
-                else if (byte == 0x7E) {
-                    state = FLAG_RCV;
-                }
-                else {
-                    state = START;
-                }
-                break;
-            case C_RCV:
-                if (byte == (0x01^cByte)) {
-                    state = BCC_OK;
-                }
-                else if (byte == 0x7E) {
-                    state = FLAG_RCV;
-                }
-                else {
-                    state = START;
-                }
-                break;
-            case BCC_OK:
-                if (byte == 0x7E){
-                    state = END;
-                }
-                else {
-                    state = START;
-                }
-                break;
-            default: 
-                break;
-        }
-    } 
-    return cByte;
-}
+/*unsigned char supervisionFrameRead() {
+   unsigned char byte;
+   unsigned char cByte = 0;
+   enum message_state state = START;
+   
+   while (state != END && alarmEnabled == FALSE) {  
+      read(fd, &byte, 1);
+      switch (state) {
+         case START:
+               if (byte == 0x7E) {
+                  state = FLAG_RCV;
+               }    
+               break;
+         case FLAG_RCV:
+               if (byte == 0x01) {
+                  state = A_RCV;
+               }
+               else if (byte == 0x7E) {
+                  state = FLAG_RCV;
+               }  
+               else {
+                  state = START;
+               }  
+               break;
+         case A_RCV:
+               if (byte == 0x05 || byte == 0x85 || byte == 0x01 || byte == 0x81) {   // RR0,RR1, REJ0, REJ1, DISC
+                  state = C_RCV;
+                  cByte = byte;   
+               }
+               else if (byte == 0x7E) {
+                  state = FLAG_RCV;
+               }
+               else {
+                  state = START;
+               }
+               break;
+         case C_RCV:
+               if (byte == (0x01^cByte)) {
+                  state = BCC_OK;
+               }
+               else if (byte == 0x7E) {
+                  state = FLAG_RCV;
+               }
+               else {
+                  state = START;
+               }
+               break;
+         case BCC_OK:
+               if (byte == 0x7E){
+                  state = END;
+               }
+               else {
+                  state = START;
+               }
+               break;
+         default: 
+               break;
+      }
+   } 
+   return cByte;
+}*/
 
 int llwrite(const unsigned char *buf, int bufSize)
 {  
-   /*for(int m = 0; m<bufSize; m++){
-      printf("recebi = 0x%02X\n", (unsigned int)(buf[m] & 0xFF));
-   }*/
    printf("entered llwrite\n");
-   unsigned char frame[2050];
+   int bufSizeParam = bufSize+6;
+   unsigned char* frame = (unsigned char*) malloc (bufSizeParam);
    memset(frame, 0, bufSize+6);
-   frame[0] = 0x7E;
-   frame[1] = 0x03;
+   *frame = 0x7E;
+   *(frame+1) = 0x03;
    if (trans_frame == 0) {
-      frame[2] = 0x00;
+      *(frame+2) = 0x00;
    }
    else if (trans_frame == 1) {
-      frame[2] = 0x40;
+      *(frame+2) = 0x40;
    }
-   frame[3] = frame[1]^frame[2];
-   //memcpy(frame+4, buf, bufSize);
+   *(frame+3) = *(frame+1)^*(frame+2);
+
    unsigned char bcc_2;
-   bcc_2 = buf[0];
+   bcc_2 = *buf;
    for (unsigned int i = 1 ; i < bufSize ; i++) {
-   bcc_2 ^= buf[i];
+      bcc_2 ^= *(buf+i);
    }
    unsigned int packet_loc = 4;
 
    for (unsigned int i = 0 ; i < bufSize ; i++) {
-      if (buf[i] == 0x7E) {
-         stuffing(frame, packet_loc, 0x7E);
+      if (*(buf+i) == 0x7E) {
+         stuffing(frame, packet_loc, 0x7E, &bufSizeParam);
          packet_loc++;
       }
-      else if (buf[i] == 0x7D) {
-         stuffing(frame, packet_loc, 0x7D);
+      else if (*(buf+i) == 0x7D) {
+         stuffing(frame, packet_loc, 0x7D, &bufSizeParam);
          packet_loc++;
       }
       else {
-         frame[packet_loc] = buf[i];
+         *(frame+packet_loc) = *(buf+i);
       }
-      //printf("recebi = 0x%02X\n", (unsigned int)(frame[packet_loc] & 0xFF));
-      //printf("mandei = 0x%02X\n", (unsigned int)(buf[i] & 0xFF));
       packet_loc++;
    }
 
    if (bcc_2 == 0x7E) {
-      stuffing(frame, packet_loc, 0x7E);
+      stuffing(frame, packet_loc, 0x7E, &bufSizeParam);
       packet_loc+=2;
    }
    else if (bcc_2 == 0x7D) {
-      stuffing(frame, packet_loc, 0x7D);
+      stuffing(frame, packet_loc, 0x7D, &bufSizeParam);
       packet_loc+=2;
    }
    else {
-      frame[packet_loc] = bcc_2;
+      *(frame+packet_loc) = bcc_2;
       packet_loc++;
    }
-   //printf("packet_loc %d\n", packet_loc);
-   frame[packet_loc] = 0x7E;
+   *(frame+packet_loc) = 0x7E;
    packet_loc++;
 
 
@@ -447,36 +422,91 @@ int llwrite(const unsigned char *buf, int bufSize)
    int rejected = FALSE;
    
    
-   while (n_transmission < retransmissions) { 
+   while (accepted != TRUE) { 
       // alarmCount = 0;  --> do we need the alarm loop in here?
-      alarmEnabled = FALSE;
+      //alarmEnabled = FALSE;
       //alarm(3);
-      rejected = FALSE;
-      accepted = FALSE;
+      write(fd, frame, packet_loc);
+      // unsigned char cByte = supervisionFrameRead();
+      // if (cByte == 0x00) {
+      //       continue;
+      // }
+      // else if (cByte == 0x05 || cByte == 0x85) {    // RR0 and RR1
+      //       trans_frame = 1 - trans_frame;
+      //       accepted = TRUE;
+      // }
+      //    else if (cByte == 0x01 || cByte == 0x81) {   // REJ0 and REJ1
+      //          rejected = FALSE;
+      //    }
+      //    else {
+      //          continue;
+      //    }
+      // }
 
-      while (/*alarmEnabled == FALSE &&*/ !accepted && !rejected) {
-         write(fd, frame, packet_loc);
-         unsigned char cByte = supervisionFrameRead();
-         
-         if (cByte == 0x00) {
-               continue;
-         }
-         else if (cByte == 0x05 || cByte == 0x85) {    // RR0 and RR1
-               trans_frame = 1 - trans_frame;
-               accepted = TRUE;
-         }
-         else if (cByte == 0x01 || cByte == 0x81) {   // REJ0 and REJ1
-               rejected = FALSE;
-         }
-         else {
-               continue;
-         }
+      // if (accepted) {
+      //    break;
+      // }
+      // n_transmission++;
+      unsigned char byte;
+      unsigned char cByte = 0;
+      enum message_state state = START;
+   
+   while (state != END && alarmEnabled == FALSE) {  
+      read(fd, &byte, 1);
+      switch (state) {
+         case START:
+               if (byte == 0x7E) {
+                  state = FLAG_RCV;
+               }    
+               break;
+         case FLAG_RCV:
+               if (byte == 0x01) {
+                  state = A_RCV;
+               }
+               else if (byte == 0x7E) {
+                  state = FLAG_RCV;
+               }  
+               else {
+                  state = START;
+               }  
+               break;
+         case A_RCV:
+               if (byte == 0x05 || byte == 0x85 || byte == 0x01 || byte == 0x81) {   // RR0,RR1, REJ0, REJ1, DISC
+                  state = C_RCV;
+                  cByte = byte;   
+               }
+               else if (byte == 0x7E) {
+                  state = FLAG_RCV;
+               }
+               else {
+                  state = START;
+               }
+               break;
+         case C_RCV:
+               if (byte == (0x01^cByte)) {
+                  state = BCC_OK;
+               }
+               else if (byte == 0x7E) {
+                  state = FLAG_RCV;
+               }
+               else {
+                  state = START;
+               }
+               break;
+         case BCC_OK:
+               if (byte == 0x7E){
+                  state = END;
+               }
+               else {
+                  state = START;
+               }
+               break;
+         default: 
+               break;
       }
-
-      if (accepted) {
-         break;
-      }
-      n_transmission++;
+   } 
+   return cByte;
+      
    }
 
    if (accepted) {
@@ -541,10 +571,8 @@ int llread(unsigned char *packet)
             else if (byte == 0x7E){
                int bcc;
                size-=1;
-               //printf("normal = 0x%02X\n", (unsigned int)(packet[size] & 0xFF));
                bcc = tmp[0];
                for (unsigned int i = 1 ; i < size; i++) {
-                  //printf("normal = 0x%02X\n", (unsigned int)(tmp[i] & 0xFF));
                   bcc ^= tmp[i];
                }
                printf("bcc %d", bcc);
