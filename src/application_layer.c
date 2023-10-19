@@ -126,7 +126,39 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
             llwrite(data_packet, datasize+3);
         }
         printf("left loop");
+        printf("file size = %d", len);
+        printf("name size = %d", namesize);
         fclose(fptr);
+
+        // end control packet
+        unsigned int end = 3;
+        int end_tmp = len;  // 10968
+        int end_lensize = 0;
+
+        while (end_tmp > 0) {
+            end_tmp >>= 8;
+            end_lensize++;
+        }
+
+        int end_size = 5 + end_lensize + namesize;
+        unsigned char end_control[end_size];
+        int x = 0;
+
+        end_control[x++] = end;
+        end_control[x++] = 0;
+        end_control[x] = end_lensize; 
+        end_tmp = len;
+
+        for (int y = x + end_lensize; y > x; y--){
+            control[y] = end_tmp & 0xFF;
+            end_tmp >>= 8;
+        }
+
+        x += end_lensize + 1;
+        end_control[x++] = 1;
+        end_control[x++] = namesize;
+        memcpy(end_control + x, filename, namesize);
+        llwrite(end_control, size);
     }
     else {
         perror("Unidentified Role\n");
