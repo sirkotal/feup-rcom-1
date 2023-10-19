@@ -10,14 +10,17 @@
 void buildControlPacket(int controlfield, const char* filename, int length){
     int lensize = 0;
     int tmp = length;
-    while (tmp > 0){
+
+    while (tmp > 0) {
         tmp >>= 8;
         lensize++;
     }
+
     int namesize = strlen(filename);
     int size = 5+lensize+namesize;
     unsigned char control[size];
     int i = 0;
+
     control[i++] = controlfield;
     control[i++] = 0;
     control[i] = lensize;
@@ -28,6 +31,7 @@ void buildControlPacket(int controlfield, const char* filename, int length){
     i+=lensize+1;
     control[i++] = 1;
     control[i++] = namesize;
+
     memcpy(control+i,filename,namesize);
     llwrite(control, size);
 }
@@ -35,6 +39,7 @@ void buildControlPacket(int controlfield, const char* filename, int length){
 void readControlPacket(unsigned char* name){
     unsigned char control[MAX_PAYLOAD_SIZE];
     llread(control);
+
     int size = 0;
     int filesize = control[2];
     int i;
@@ -44,6 +49,7 @@ void readControlPacket(unsigned char* name){
             size <<= 8;
         }
     }
+
     printf("Size:%d\n", size);
     int namesize = control[++i];
     /*for (int j = 0; j < namesize; j++){
@@ -51,8 +57,20 @@ void readControlPacket(unsigned char* name){
     }*/
     memcpy(name,control+7, namesize);
     name[namesize]='\0';
+
+    int format_pos = -1;
+    for (int i = 0; i < namesize; i++) {
+        if (name[i] == '.' && (i + 3) < namesize && name[i + 1] == 'g' && name[i + 2] == 'i' && name[i + 3] == 'f') {
+            format_pos = j;
+            break;
+        }
+    }
+
+    if (format_pos != -1) {
+        memmove(name + format_pos, "-received.gif", 14);
+    }
     //remove on
-    name[0]='t';
+    //name[0]='t';
 }
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate, int nTries, int timeout, const char *filename) {
@@ -90,7 +108,8 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
     else if (parameters.role == LlTx) {
         FILE *fptr;
         unsigned int packet_size;
-        unsigned int start = 2;
+        unsigned int start_ctrl = 2;
+        unsigned int end_ctrl = 3;
 
         fptr = fopen(filename, "rb");
 
@@ -102,7 +121,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
         fseek(fptr, 0, SEEK_END);
         int len = ftell(fptr);
         fseek(fptr, 0, SEEK_SET);
-        buildControlPacket(2, filename, len);
+        buildControlPacket(start_ctrl, filename, len);
         int bytesleft = len;
         int datasize;
         unsigned char data[MAX_PAYLOAD_SIZE-3];
@@ -125,7 +144,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
             //printf("size: %d\n", datasize);
             llwrite(data_packet, datasize+3);
         }
-        buildControlPacket(3, filename, len);
+        buildControlPacket(end_ctrl, filename, len);
         fclose(fptr);
         llclose(statistics);
     }

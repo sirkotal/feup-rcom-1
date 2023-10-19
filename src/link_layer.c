@@ -51,16 +51,6 @@ void establishSerialPort(LinkLayer connectionParameters) {
     // Program usage: Uses either COM1 or COM2
     const char *serialPortName = connectionParameters.serialPort;
 
-    /*if (argc < 2)
-    {
-        printf("Incorrect program usage\n"
-               "Usage: %s <SerialPort>\n"
-               "Example: %s /dev/ttyS1\n",
-               argv[0],
-               argv[0]);
-        exit(1);
-    }*/
-
     // Open serial port device for reading and writing, and not as controlling tty
     // because we don't want to get killed if linenoise sends CTRL-C.
     fd = open(serialPortName, O_RDWR | O_NOCTTY);
@@ -197,7 +187,7 @@ void llSetFrame() {
             state = END;
             printf("Program Terminated...\n");
          }
-         else{
+         else {
             int bytes = write(fd, buf, BUF_SIZE);
             printf("%d bytes written\n", bytes);
             alarm(3);
@@ -728,13 +718,21 @@ void llcloseRx(){
 int llclose(int showStatistics)
 {  
     if (role == LlTx) {
-         llcloseTx();
+        llcloseTx();
     }
     else {
         llcloseRx();
     }
 
+    if (showStatistics) {
+        printStatistics();
+    }
+
     resetPortSettings();
 
     return 1;
+}
+
+void printStatistics() {
+    double t_prop;
 }
