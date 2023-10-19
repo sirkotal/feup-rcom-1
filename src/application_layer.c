@@ -61,7 +61,7 @@ void readControlPacket(unsigned char* name){
     int format_pos = -1;
     for (int i = 0; i < namesize; i++) {
         if (name[i] == '.' && (i + 3) < namesize && name[i + 1] == 'g' && name[i + 2] == 'i' && name[i + 3] == 'f') {
-            format_pos = j;
+            format_pos = i;
             break;
         }
     }
