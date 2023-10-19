@@ -39,15 +39,12 @@ enum message_state {
 int retransmissions;
 unsigned int trans_frame = 0;
 
-volatile int STOP = FALSE;
-
 // Alarm function handler
 void alarmHandler(int signal)
 {
    alarmCount++;
-   alarm(3);
-    //printf("Alarm #%d\n", alarmCount);
-    //talvez fazer verificação aqui
+   alarmEnabled = FALSE;
+   printf("Alarm %d\n", alarmCount);
 }
 
 void establishSerialPort(LinkLayer connectionParameters) {
@@ -69,6 +66,7 @@ void establishSerialPort(LinkLayer connectionParameters) {
     fd = open(serialPortName, O_RDWR | O_NOCTTY);
 
     retransmissions = connectionParameters.nRetransmissions;
+    role = connectionParameters.role;
 
     if (fd < 0)
     {
@@ -96,7 +94,7 @@ void establishSerialPort(LinkLayer connectionParameters) {
     newtio.c_lflag = 0;
     newtio.c_cc[VTIME] = 0; // Inter-character timer unused
     
-    if (connectionParameters.role == LlTx) {
+    if (role == LlTx) {
         newtio.c_cc[VMIN] = 0; 
     }
     else {
@@ -148,11 +146,12 @@ void llSetFrame() {
    printf("%d bytes written\n", bytes);
    
    alarm(3);
+   alarmEnabled = TRUE;
    int count = 0;
    unsigned char byte;
    enum message_state state = START;
 
-   while (STOP == FALSE) {
+   while (state != END) {
       int reception = read(fd, &byte, 1);     
       
       switch(state) {
@@ -185,25 +184,29 @@ void llSetFrame() {
          case BCC_OK:
             if (byte == 0x7E) {
                state = END;
-               STOP = TRUE;
                printf("Connection Established...\n");
             }
             else
                state = START;
             break;
          }
-
-      if (alarmCount == 4) {
-         alarm(0);
-         STOP = TRUE;
-         printf("Program Terminated...\n");
-      }
       
-      /*for (int i = 0; i < BUF_SIZE; i++) {
-         printf("var = 0x%02X\n", (unsigned int)(buf[i] & 0xFF));
-      }*/
-
+      if (alarmEnabled == FALSE && state != END){
+         if (alarmCount > retransmissions) {
+            alarm(0);
+            state = END;
+            printf("Program Terminated...\n");
+         }
+         else{
+            int bytes = write(fd, buf, BUF_SIZE);
+            printf("%d bytes written\n", bytes);
+            alarm(3);
+            alarmEnabled = TRUE;
+         }
+      }
    }
+   alarm(0);
+   alarmCount = 0;
 }
 
 void llUaFrame() {
@@ -211,11 +214,8 @@ void llUaFrame() {
     enum message_state state = START;
     unsigned char byte;
 
-    while (STOP == FALSE) {
-        // Returns after 5 chars have been input
+    while (state != END) {
         int bytes = read(fd, &byte, 1);
-         // Set end of string to '\0', so we can printf
-        //printf("%s:%d\n", buf, bytes);
         switch(state) {
             case START:
                if (byte == 0x7E){
@@ -251,7 +251,6 @@ void llUaFrame() {
             case BCC_OK:
                if (byte == 0x7E) {
                   state = END;
-                  STOP = TRUE;
                   buf[BCC_OK] = byte;
                }
                else
@@ -259,20 +258,9 @@ void llUaFrame() {
                break;
             }
          printf("state: %d",state);
-        /*for (int i = 0; i<BUF_SIZE; i++){
-            printf("var = 0x%02X\n", (unsigned int)(buf[i] & 0xFF));
-        }*/
-        /*if (buf[1]^buf[2]==buf[3]){
-            STOP = TRUE;}*/
-               
-        //printf(":%s:%d\n", buf, bytes);
-        //if (buf[0] == 'z')
-          //  STOP = TRUE;
     }
     int bytes = write(fd, buf, BUF_SIZE);
     printf("%d bytes written\n", bytes);
-    // The while() cycle should be changed in order to respect the specifications
-    // of the protocol indicated in the Lab guide
 }
 
 ////////////////////////////////////////////////
@@ -282,7 +270,7 @@ int llopen(LinkLayer connectionParameters)
 {    
    printf("a entrar open\n");
    establishSerialPort(connectionParameters);
-   if (connectionParameters.role == LlTx) {
+   if (role == LlTx) {
       llSetFrame();
    }
    else {
@@ -300,68 +288,6 @@ void stuffing(unsigned char* frame, unsigned int packet_location, unsigned char 
    frame[packet_location] = 0x7D;
    frame[packet_location+1] = special^0x20;
 }
-
-/*unsigned char supervisionFrameRead() {
-   unsigned char byte;
-   unsigned char cByte = 0;
-   enum message_state state = START;
-   
-   while (state != END && alarmEnabled == FALSE) {  
-      read(fd, &byte, 1);
-      switch (state) {
-         case START:
-               if (byte == 0x7E) {
-                  state = FLAG_RCV;
-               }    
-               break;
-         case FLAG_RCV:
-               if (byte == 0x01) {
-                  state = A_RCV;
-               }
-               else if (byte == 0x7E) {
-                  state = FLAG_RCV;
-               }  
-               else {
-                  state = START;
-               }  
-               break;
-         case A_RCV:
-               if (byte == 0x05 || byte == 0x85 || byte == 0x01 || byte == 0x81) {   // RR0,RR1, REJ0, REJ1, DISC
-                  state = C_RCV;
-                  cByte = byte;   
-               }
-               else if (byte == 0x7E) {
-                  state = FLAG_RCV;
-               }
-               else {
-                  state = START;
-               }
-               break;
-         case C_RCV:
-               if (byte == (0x01^cByte)) {
-                  state = BCC_OK;
-               }
-               else if (byte == 0x7E) {
-                  state = FLAG_RCV;
-               }
-               else {
-                  state = START;
-               }
-               break;
-         case BCC_OK:
-               if (byte == 0x7E){
-                  state = END;
-               }
-               else {
-                  state = START;
-               }
-               break;
-         default: 
-               break;
-      }
-   } 
-   return cByte;
-}*/
 
 int llwrite(const unsigned char *buf, int bufSize)
 {  
@@ -415,43 +341,16 @@ int llwrite(const unsigned char *buf, int bufSize)
    }
    *(frame+packet_loc) = 0x7E;
    packet_loc++;
-
-
-   int n_transmission = 0;
+   
+   alarm(3);
+   alarmEnabled = TRUE;
+   unsigned char byte;
+   unsigned char cbyte;
    int accepted = FALSE;
-   int rejected = FALSE;
-   
-   
-   while (accepted != TRUE) { 
-      // alarmCount = 0;  --> do we need the alarm loop in here?
-      //alarmEnabled = FALSE;
-      //alarm(3);
-      write(fd, frame, packet_loc);
-      // unsigned char cByte = supervisionFrameRead();
-      // if (cByte == 0x00) {
-      //       continue;
-      // }
-      // else if (cByte == 0x05 || cByte == 0x85) {    // RR0 and RR1
-      //       trans_frame = 1 - trans_frame;
-      //       accepted = TRUE;
-      // }
-      //    else if (cByte == 0x01 || cByte == 0x81) {   // REJ0 and REJ1
-      //          rejected = FALSE;
-      //    }
-      //    else {
-      //          continue;
-      //    }
-      // }
-
-      // if (accepted) {
-      //    break;
-      // }
-      // n_transmission++;
-      unsigned char byte;
-      unsigned char cByte = 0;
-      enum message_state state = START;
-   
-   while (state != END && alarmEnabled == FALSE) {  
+   enum message_state state = START;
+   write(fd, frame, packet_loc);
+   printf("packet %d\n", packet_loc);
+   while (accepted != TRUE && state != END) { 
       read(fd, &byte, 1);
       switch (state) {
          case START:
@@ -471,9 +370,14 @@ int llwrite(const unsigned char *buf, int bufSize)
                }  
                break;
          case A_RCV:
-               if (byte == 0x05 || byte == 0x85 || byte == 0x01 || byte == 0x81) {   // RR0,RR1, REJ0, REJ1, DISC
+               if (byte == 0x05 || byte == 0x85){  // RR0, RR1 
+                  accepted = TRUE;
                   state = C_RCV;
-                  cByte = byte;   
+                  cbyte = byte;
+               }
+               else if(byte == 0x01 || byte == 0x81) {   //REJ0, REJ1
+                  state = C_RCV;
+                  cbyte = byte;
                }
                else if (byte == 0x7E) {
                   state = FLAG_RCV;
@@ -483,7 +387,7 @@ int llwrite(const unsigned char *buf, int bufSize)
                }
                break;
          case C_RCV:
-               if (byte == (0x01^cByte)) {
+               if (byte == (0x01^cbyte)) {
                   state = BCC_OK;
                }
                else if (byte == 0x7E) {
@@ -504,12 +408,26 @@ int llwrite(const unsigned char *buf, int bufSize)
          default: 
                break;
       }
-   } 
-   return cByte;
-      
+      //printf("state: %d\n",state);
+      if (alarmEnabled == FALSE && state != END){
+         printf("entrou\n");
+         if (alarmCount > retransmissions) {
+            alarm(0);
+            state = END;
+            printf("Program Terminated...\n");
+         }
+         else{
+            int bytes = write(fd, frame, packet_loc);
+            printf("%d bytes written\n", bytes);
+            alarm(3);
+            alarmEnabled = TRUE;
+         }
+      }
    }
-
+   alarm(0);
+   alarmEnabled = FALSE;
    if (accepted) {
+      trans_frame = 1 - trans_frame;
       printf("left llwrite nicely\n");
       return packet_loc;
    }
@@ -530,10 +448,8 @@ int llread(unsigned char *packet)
    unsigned char byte;
    int bcc = 0;
    int size = 0;
-   STOP = FALSE;
-   while (STOP == FALSE) {
+   while (state != END) {
       int bytes = read(fd, &byte, 1);
-      //printf("var = 0x%02X\n", (unsigned int)(byte & 0xFF));
       switch(state) {
          case START:
             if (byte == 0x7E){
@@ -579,7 +495,7 @@ int llread(unsigned char *packet)
                printf("bc %d", tmp[size]);
                if (bcc == tmp[size]){
                   memcpy(packet,tmp,MAX_PAYLOAD_SIZE);
-                  state = STOP;
+                  state = END;
                   buf[0]=0x7E;
                   buf[1]=0x01;
                   if (frame)
@@ -633,7 +549,7 @@ int llread(unsigned char *packet)
 // LLCLOSE
 ////////////////////////////////////////////////
 void llcloseTx(){
-
+   printf("enter llcloseTX\n");
    buf[0] = 0x7E;
    buf[1] = 0x03;
    buf[2] = 0x0B;
@@ -644,11 +560,12 @@ void llcloseTx(){
    printf("%d bytes written\n", bytes);
    
    alarm(3);
+   alarmEnabled=TRUE;
    int count = 0;
    unsigned char byte;
    enum message_state state = START;
 
-   while (STOP == FALSE) {
+   while (state != END) {
       int reception = read(fd, &byte, 1);     
       
       switch(state) {
@@ -681,18 +598,28 @@ void llcloseTx(){
          case BCC_OK:
             if (byte == 0x7E) {
                state = END;
-               STOP = TRUE;
             }
             else
                state = START;
             break;
       }   
 
-      if (alarmCount == 4) {
-         alarm(0);
-         STOP = TRUE;
+      if (alarmEnabled == FALSE && state != END){
+         if (alarmCount > retransmissions) {
+            alarm(0);
+            state = END;
+            printf("Program Terminated...\n");
+         }
+         else{
+            int bytes = write(fd, buf, BUF_SIZE);
+            printf("%d bytes written\n", bytes);
+            alarm(3);
+            alarmEnabled = TRUE;
+         }
       }
    }
+   alarm(0);
+   alarmEnabled = FALSE;
 
    buf[0] = 0x7E;
    buf[1] = 0x03;
@@ -701,13 +628,16 @@ void llcloseTx(){
    buf[4] = 0x7E;
 
    bytes = write(fd, buf, BUF_SIZE);
+   printf("left llcloseTX\n");
+   printf("Program Terminated...\n");
 }
 
 void llcloseRx(){
+   printf("enter llcloseRX\n");
    enum message_state state = START;
    unsigned char byte;
 
-   while (STOP == FALSE) {
+   while (state != END) {
       int bytes = read(fd, &byte, 1);
 
       switch(state) {
@@ -740,7 +670,6 @@ void llcloseRx(){
          case BCC_OK:
             if (byte == 0x7E) {
                state = END;
-               STOP = TRUE;
             }
             else
                state = START;
@@ -753,8 +682,8 @@ void llcloseRx(){
    buf[3] = buf[1]^buf[2];
    buf[4] = 0x7E;
    int bytes = write(fd, buf, BUF_SIZE);
-   
-   while (STOP == FALSE) {
+   state = START;
+   while (state != END) {
       int bytes = read(fd, &byte, 1);
 
       switch(state) {
@@ -787,21 +716,19 @@ void llcloseRx(){
          case BCC_OK:
             if (byte == 0x7E) {
                state = END;
-               STOP = TRUE;
             }
             else
                state = START;
             break;
          }
    }
-   printf("%d bytes written\n", bytes);
+   printf("Program Terminated...\n");
 }
 
 int llclose(int showStatistics)
 {  
-
     if (role == LlTx) {
-        llcloseTx();
+         llcloseTx();
     }
     else {
         llcloseRx();

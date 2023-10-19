@@ -46,9 +46,9 @@ void readControlPacket(unsigned char* name){
     }
     printf("Size:%d\n", size);
     int namesize = control[++i];
-    for (int j = 0; j < namesize; j++){
+    /*for (int j = 0; j < namesize; j++){
         printf("var = 0x%02X\n", (unsigned int)(*(control +7 + j) & 0xFF));
-    }
+    }*/
     memcpy(name,control+7, namesize);
     name[namesize]='\0';
     //remove on
@@ -122,11 +122,10 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
             /*for(int m = 0; m<datasize; m++){
                printf("mandei = 0x%02X\n", (unsigned int)(data_packet[m] & 0xFF));
             }*/
-            printf("size: %d\n", datasize);
+            //printf("size: %d\n", datasize);
             llwrite(data_packet, datasize+3);
         }
         buildControlPacket(3, filename, len);
-        printf("left loop");
         fclose(fptr);
         llclose(statistics);
     }
