@@ -55,7 +55,7 @@ void readControlPacket(unsigned char* name){
     /*for (int j = 0; j < namesize; j++){
         printf("var = 0x%02X\n", (unsigned int)(*(control +7 + j) & 0xFF));
     }*/
-    memcpy(name,control+7, namesize);
+    memcpy(name,control+(++i), namesize);
     name[namesize]='\0';
 
     int format_pos = -1;
@@ -86,8 +86,10 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
     parameters.baudRate = baudRate;
     parameters.nRetransmissions = nTries;
     parameters.timeout = timeout;
-    llopen(parameters);
-
+    if (llopen(parameters) < 0){
+        printf("Connection failed");
+        exit(0);
+    }
     if (parameters.role == LlRx) {  
         unsigned char name[MAX_PAYLOAD_SIZE];
         readControlPacket(name);
@@ -120,6 +122,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
 
         fseek(fptr, 0, SEEK_END);
         int len = ftell(fptr);
+        printf("len %d", len);
         fseek(fptr, 0, SEEK_SET);
         buildControlPacket(start_ctrl, filename, len);
         int bytesleft = len;

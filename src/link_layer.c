@@ -122,7 +122,7 @@ void resetPortSettings() {
     close(fd);
 }
 
-void llSetFrame() {
+int llSetFrame() {
    // Set alarm function handler
    (void)signal(SIGALRM, alarmHandler);
 
@@ -184,8 +184,10 @@ void llSetFrame() {
       if (alarmEnabled == FALSE && state != END){
          if (alarmCount > retransmissions) {
             alarm(0);
+            alarmCount = 0;
             state = END;
             printf("Program Terminated...\n");
+            return -1;
          }
          else {
             int bytes = write(fd, buf, BUF_SIZE);
@@ -197,6 +199,7 @@ void llSetFrame() {
    }
    alarm(0);
    alarmCount = 0;
+   return 0;
 }
 
 void llUaFrame() {
@@ -258,16 +261,17 @@ void llUaFrame() {
 ////////////////////////////////////////////////
 int llopen(LinkLayer connectionParameters)
 {    
-   printf("a entrar open\n");
+   printf("Enter llopen\n");
    establishSerialPort(connectionParameters);
+   int connection;
    if (role == LlTx) {
-      llSetFrame();
+      connection = llSetFrame();
    }
    else {
       llUaFrame();
    }
-   printf("a sair open\n");
-   return 0;
+   printf("Leave llopen\n");
+   return connection;
 }
 
 ////////////////////////////////////////////////
