@@ -7,10 +7,75 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+void buildControlPacket(int controlfield, const char* filename, int length){
+    int lensize = 0;
+    int tmp = length;
 
+    while (tmp > 0) {
+        tmp >>= 8;
+        lensize++;
+    }
+
+    int namesize = strlen(filename);
+    int size = 5+lensize+namesize;
+    unsigned char control[size];
+    int i = 0;
+
+    control[i++] = controlfield;
+    control[i++] = 0;
+    control[i] = lensize;
+    for (int j = i + lensize; j > i; j--){
+        control[j] = length & 0xFF;
+        length >>= 8;
+    }
+    i+=lensize+1;
+    control[i++] = 1;
+    control[i++] = namesize;
+
+    memcpy(control+i,filename,namesize);
+    llwrite(control, size);
+}
+
+void readControlPacket(unsigned char* name){
+    unsigned char control[MAX_PAYLOAD_SIZE];
+    llread(control);
+
+    int size = 0;
+    int filesize = control[2];
+    int i;
+    for (i = 3; i < 3+filesize; i++){
+        size += control[i];
+        if (i+1 < 3+filesize){
+            size <<= 8;
+        }
+    }
+
+    printf("Size:%d\n", size);
+    int namesize = control[++i];
+    /*for (int j = 0; j < namesize; j++){
+        printf("var = 0x%02X\n", (unsigned int)(*(control +7 + j) & 0xFF));
+    }*/
+    memcpy(name,control+(++i), namesize);
+    name[namesize]='\0';
+
+    int format_pos = -1;
+    for (int i = 0; i < namesize; i++) {
+        if (name[i] == '.' && (i + 3) < namesize && name[i + 1] == 'g' && name[i + 2] == 'i' && name[i + 3] == 'f') {
+            format_pos = i;
+            break;
+        }
+    }
+
+    if (format_pos != -1) {
+        memmove(name + format_pos, "-received.gif", 14);
+    }
+    //remove on
+    //name[0]='t';
+}
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate, int nTries, int timeout, const char *filename) {
     LinkLayer parameters;
+    int statistics = 0;
     strcpy(parameters.serialPort, serialPort);
     if (strcmp(role, "rx") == 0) {
         parameters.role = LlRx;
@@ -21,47 +86,32 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
     parameters.baudRate = baudRate;
     parameters.nRetransmissions = nTries;
     parameters.timeout = timeout;
-    llopen(parameters);
-
-    if (parameters.role == LlRx) {
-        unsigned char control[MAX_PAYLOAD_SIZE];
-        llread(control);
-        int size = 0;
-        for (int i = 3; i < 3+control[2]; i++){
-            size += control[i];
-            if (i+1<5)
-                size <<= 8;
-        }    
-        printf("J:%d\n", size);
-        int namesize = control[4+control[2]];
-        unsigned char name[namesize];
-        memcpy(name,control+5+control[2], namesize);
-        name[0] = 'T';
-        //printf("Name: %s\n", name);
-        //to do later
-        FILE *fptr = fopen("tenguin.gif", "wb+");
+    if (llopen(parameters) < 0){
+        printf("Connection failed");
+        exit(0);
+    }
+    if (parameters.role == LlRx) {  
+        unsigned char name[MAX_PAYLOAD_SIZE];
+        readControlPacket(name);
+        
+        FILE *fptr = fopen(name, "wb+");
         int bytes = 0;
-        int reada = 1;
-        int bytesread = 0;
+        int reada;
         unsigned char data[MAX_PAYLOAD_SIZE];    
-        while(reada > 0){
+        do {
             reada = llread(data);
-            for (int k = 0; k < reada; k++){
-                printf("data = 0x%02X\n", (unsigned int)(data[k] & 0xFF));
-            }
-            bytesread += reada;
-            //int cur = ftell(fptr);
-            //printf("data: %d\n", reada-3);
+            if (data[0] == 3) break;
             fwrite(data+3, 1, reada-3, fptr);
             fflush(fptr);
-        }
-
-
+        } while (reada > 0);
+        fclose(fptr);
+        llclose(statistics);
     }
     else if (parameters.role == LlTx) {
         FILE *fptr;
         unsigned int packet_size;
-        unsigned int start = 2;
+        unsigned int start_ctrl = 2;
+        unsigned int end_ctrl = 3;
 
         fptr = fopen(filename, "rb");
 
@@ -72,37 +122,9 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
 
         fseek(fptr, 0, SEEK_END);
         int len = ftell(fptr);
+        printf("len %d", len);
         fseek(fptr, 0, SEEK_SET);
-        /*for (int k = 0; k< len; k++){
-            printf("var = 0x%02X\n", (unsigned int)(data[k] & 0xFF));
-        }*/
-        int tmp = len;
-        int lensize = 0;
-        while (tmp > 0){
-            tmp >>= 8;
-            lensize++;
-        }
-        int namesize = strlen(filename);
-        int size = 5+lensize+namesize;
-        unsigned char control[size];
-        int i = 0;
-        control[i++] = 2;
-        control[i++] = 0;
-        control[i] = lensize; //or i++ but then i-1 + lensize
-        tmp = len;
-        for (int j = i + lensize; j > i; j--){
-            //printf("J:%d\n", j);
-            control[j] = tmp & 0xFF;
-            //printf("control:%d\n", control[j]);
-            tmp >>= 8;
-            //printf("len:%d\n", tmp);
-        }
-        //printf(" data :%d\n", data[194]);
-        i+=lensize+1;
-        control[i++] = 1;
-        control[i++] = namesize;
-        memcpy(control+i,filename,namesize);
-        llwrite(control, size);
+        buildControlPacket(start_ctrl, filename, len);
         int bytesleft = len;
         int datasize;
         unsigned char data[MAX_PAYLOAD_SIZE-3];
@@ -122,43 +144,12 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
             /*for(int m = 0; m<datasize; m++){
                printf("mandei = 0x%02X\n", (unsigned int)(data_packet[m] & 0xFF));
             }*/
-            printf("size: %d\n", datasize);
+            //printf("size: %d\n", datasize);
             llwrite(data_packet, datasize+3);
         }
-        printf("left loop");
-        printf("file size = %d", len);
-        printf("name size = %d", namesize);
+        buildControlPacket(end_ctrl, filename, len);
         fclose(fptr);
-
-        // end control packet
-        unsigned int end = 3;
-        int end_tmp = len;  // 10968
-        int end_lensize = 0;
-
-        while (end_tmp > 0) {
-            end_tmp >>= 8;
-            end_lensize++;
-        }
-
-        int end_size = 5 + end_lensize + namesize;
-        unsigned char end_control[end_size];
-        int x = 0;
-
-        end_control[x++] = end;
-        end_control[x++] = 0;
-        end_control[x] = end_lensize; 
-        end_tmp = len;
-
-        for (int y = x + end_lensize; y > x; y--){
-            control[y] = end_tmp & 0xFF;
-            end_tmp >>= 8;
-        }
-
-        x += end_lensize + 1;
-        end_control[x++] = 1;
-        end_control[x++] = namesize;
-        memcpy(end_control + x, filename, namesize);
-        llwrite(end_control, size);
+        llclose(statistics);
     }
     else {
         perror("Unidentified Role\n");
