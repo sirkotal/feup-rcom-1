@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void buildControlPacket(int controlfield, const char* filename, int length){
+int buildControlPacket(int controlfield, const char* filename, int length){
     int lensize = 0;
     int tmp = length;
 
@@ -33,12 +33,16 @@ void buildControlPacket(int controlfield, const char* filename, int length){
     control[i++] = namesize;
 
     memcpy(control+i,filename,namesize);
-    llwrite(control, size);
+    return llwrite(control, size);
 }
 
-void readControlPacket(unsigned char* name){
+int readControlPacket(unsigned char* name){
     unsigned char control[MAX_PAYLOAD_SIZE];
-    llread(control);
+    int reada;
+    while ((reada = llread(control)) == -1);
+    if (reada == -2){
+        return -2;
+    }
 
     int size = 0;
     int filesize = control[2];
@@ -50,11 +54,7 @@ void readControlPacket(unsigned char* name){
         }
     }
 
-    printf("Size:%d\n", size);
     int namesize = control[++i];
-    /*for (int j = 0; j < namesize; j++){
-        printf("var = 0x%02X\n", (unsigned int)(*(control +7 + j) & 0xFF));
-    }*/
     memcpy(name,control+(++i), namesize);
     name[namesize]='\0';
 
@@ -69,8 +69,6 @@ void readControlPacket(unsigned char* name){
     if (format_pos != -1) {
         memmove(name + format_pos, "-received.gif", 14);
     }
-    //remove on
-    //name[0]='t';
 }
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate, int nTries, int timeout, const char *filename) {
@@ -87,23 +85,32 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
     parameters.nRetransmissions = nTries;
     parameters.timeout = timeout;
     if (llopen(parameters) < 0){
-        printf("Connection failed");
-        exit(0);
+        printf("Connection failed\n");
+        exit(EXIT_FAILURE);
     }
     if (parameters.role == LlRx) {  
         unsigned char name[MAX_PAYLOAD_SIZE];
-        readControlPacket(name);
-        
+        if (readControlPacket(name) == -2){
+            perror("Error transfering the control\n");
+            llclose(statistics);
+            exit(EXIT_FAILURE);
+        }
         FILE *fptr = fopen(name, "wb+");
         int bytes = 0;
         int reada;
-        unsigned char data[MAX_PAYLOAD_SIZE];    
+            unsigned char data[MAX_PAYLOAD_SIZE];   
         do {
-            reada = llread(data);
+            while ((reada = llread(data)) == -1);
+            if (reada == -2){
+                perror("Error transfering the data\n");
+                fclose(fptr);
+                llclose(statistics);
+                exit(EXIT_FAILURE);
+            }
             if (data[0] == 3) break;
             fwrite(data+3, 1, reada-3, fptr);
             fflush(fptr);
-        } while (reada > 0);
+        } while (reada > 0); 
         fclose(fptr);
         llclose(statistics);
     }
@@ -117,14 +124,19 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
 
         if (fptr == NULL) {
             perror("This file wasn't found\n");
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
 
         fseek(fptr, 0, SEEK_END);
         int len = ftell(fptr);
-        printf("len %d", len);
         fseek(fptr, 0, SEEK_SET);
-        buildControlPacket(start_ctrl, filename, len);
+        if (buildControlPacket(start_ctrl, filename, len) == -1){
+            perror("Control packet error\n");
+            fclose(fptr);
+            llclose(statistics);
+            exit(EXIT_FAILURE);
+        }
+        printf("leu control start");
         int bytesleft = len;
         int datasize;
         unsigned char data[MAX_PAYLOAD_SIZE-3];
@@ -141,18 +153,27 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
             data_packet[1] = datasize >> 8 & 0xFF;
             data_packet[2] = datasize & 0xFF;
             memcpy(data_packet + 3, data, datasize);
-            /*for(int m = 0; m<datasize; m++){
-               printf("mandei = 0x%02X\n", (unsigned int)(data_packet[m] & 0xFF));
-            }*/
-            //printf("size: %d\n", datasize);
-            llwrite(data_packet, datasize+3);
+            int written = llwrite(data_packet, datasize+3);
+            if (written == -1){
+                printf("saiu\n");
+                break;}
+            printf("leu data\n");
         }
-        buildControlPacket(end_ctrl, filename, len);
+        if (buildControlPacket(end_ctrl, filename, len) == -1){
+            perror("Control packet error\n");
+            fclose(fptr);
+            llclose(statistics);
+            exit(EXIT_FAILURE);
+        }
+        printf("leu control end\n");
         fclose(fptr);
-        llclose(statistics);
+        if (llclose(statistics) == -1){
+            perror("Error disconnecting\n");
+            exit(EXIT_FAILURE);
+        }
     }
     else {
         perror("Unidentified Role\n");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 }
