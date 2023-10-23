@@ -151,7 +151,7 @@ int llSetFrame() {
                state = FLAG_RCV;
             break;
          case FLAG_RCV:
-            if (byte == 0x01)
+            if (byte == 0x03)
                state = A_RCV;
             else if (byte != 0x7E)
                state = START;
@@ -221,7 +221,7 @@ void llUaFrame() {
             case FLAG_RCV:
                if (byte == 0x03){
                   state = A_RCV;
-                  buf[FLAG_RCV] = 0x01;}
+                  buf[FLAG_RCV] = byte;}
                else if (byte != 0x7E)
                   state = START;
                break;
@@ -502,7 +502,7 @@ int llread(unsigned char *packet)
                }
                else{
                   buf[0]=0x7E;
-                  buf[1]=0x01;
+                  buf[1]=0x03;
                   if (frame)
                      buf[2]=0x01;
                   else
@@ -563,7 +563,7 @@ int llcloseTx(){
                state = FLAG_RCV;
             break;
          case FLAG_RCV:
-            if (byte == 0x01)
+            if (byte == 0x03)
                state = A_RCV;
             else if (byte != 0x7E)
                state = START;
@@ -613,7 +613,7 @@ int llcloseTx(){
    alarmCount = 0;
 
    buf[0] = 0x7E;
-   buf[1] = 0x03;
+   buf[1] = 0x01;
    buf[2] = 0x07;
    buf[3] = buf[1]^buf[2];
    buf[4] = 0x7E;
@@ -668,7 +668,7 @@ void llcloseRx(){
          }
    }
    buf[0] = 0x7E;
-   buf[1] = 0x01;
+   buf[1] = 0x03;
    buf[2] = 0x0B;
    buf[3] = buf[1]^buf[2];
    buf[4] = 0x7E;
@@ -683,7 +683,7 @@ void llcloseRx(){
                state = FLAG_RCV;
             break;
          case FLAG_RCV:
-            if (byte == 0x03)
+            if (byte == 0x01)
                state = A_RCV;
             else if (byte != 0x7E)
                state = START;
