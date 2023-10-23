@@ -339,78 +339,91 @@ int llwrite(const unsigned char *buf, int bufSize)
    unsigned char byte;
    unsigned char cbyte;
    int accepted = FALSE;
+   int alarmExceeded = FALSE; 
    enum message_state state = START;
-   write(fd, frame, packet_loc);
-   while (accepted != TRUE && state != END) { 
-      read(fd, &byte, 1);
-      switch (state) {
-         case START:
-               if (byte == 0x7E) {
-                  state = FLAG_RCV;
-               }    
-               break;
-         case FLAG_RCV:
-               if (byte == 0x03) {
-                  state = A_RCV;
-               }
-               else if (byte == 0x7E) {
-                  state = FLAG_RCV;
-               }  
-               else {
-                  state = START;
-               }  
-               break;
-         case A_RCV:
-               if (byte == 0x05 || byte == 0x85){  // RR0, RR1 
-                  accepted = TRUE;
-                  state = C_RCV;
-                  cbyte = byte;
-               }
-               else if(byte == 0x01 || byte == 0x81) {   //REJ0, REJ1
-                  state = C_RCV;
-                  cbyte = byte;
-               }
-               else if (byte == 0x7E) {
-                  state = FLAG_RCV;
-               }
-               else {
-                  state = START;
-               }
-               break;
-         case C_RCV:
-               if (byte == (0x01^cbyte)) {
-                  state = BCC_OK;
-               }
-               else if (byte == 0x7E) {
-                  state = FLAG_RCV;
-               }
-               else {
-                  state = START;
-               }
-               break;
-         case BCC_OK:
-               if (byte == 0x7E){
-                  state = END;
-               }
-               else {
-                  state = START;
-               }
-               break;
-         default: 
-               break;
-      }
-      //printf("state: %d\n",state);
-      if (alarmEnabled == FALSE && state != END){
-         if (alarmCount > retransmissions) {
-            alarm(0);
-            state = END;
-            printf("Program Terminated...\n");
+   while (!accepted && !alarmExceeded){
+      printf("here\n");
+      write(fd, frame, packet_loc);
+      state = START;
+      while (state != END)
+      { 
+         read(fd, &byte, 1);
+         switch (state) {
+            case START:
+                  if (byte == 0x7E) {
+                     printf("flag\n");
+                     state = FLAG_RCV;
+                  }    
+                  break;
+            case FLAG_RCV:
+                  if (byte == 0x03) {
+                     printf("address\n");
+                     state = A_RCV;
+                  }
+                  else if (byte == 0x7E) {
+                     state = FLAG_RCV;
+                  }  
+                  else {
+                     state = START;
+                  }  
+                  break;
+            case A_RCV:
+                  if (byte == 0x05 || byte == 0x85){  // RR0, RR1 
+                     printf("rr\n");
+                     accepted = TRUE;
+                     state = C_RCV;
+                     cbyte = byte;
+                  }
+                  else if(byte == 0x01 || byte == 0x81) {   //REJ0, REJ1
+                     printf("rej\n");
+                     state = C_RCV;
+                     cbyte = byte;
+                  }
+                  else if (byte == 0x7E) {
+                     state = FLAG_RCV;
+                  }
+                  else {
+                     state = START;
+                  }
+                  break;
+            case C_RCV:
+                  if (byte == (0x03^cbyte)) {
+                     printf("bcc\n");
+                     state = BCC_OK;
+                  }
+                  else if (byte == 0x7E) {
+                     state = FLAG_RCV;
+                  }
+                  else {
+                     state = START;
+                  }
+                  break;
+            case BCC_OK:
+                  if (byte == 0x7E){
+                     printf("end\n");
+                     state = END;
+                  }
+                  else {
+                     state = START;
+                  }
+                  break;
+            default: 
+                  break;
          }
-         else{
-            int bytes = write(fd, frame, packet_loc);
-            printf("%d bytes written\n", bytes);
-            alarm(3);
-            alarmEnabled = TRUE;
+         //printf("state: %d\n",state);
+         if (alarmEnabled == FALSE && state != END){
+            if (alarmCount > retransmissions) {
+               alarm(0);
+               alarmExceeded = TRUE;
+               state = END;
+               printf("Program Terminated...\n");
+            }
+            else{
+               int bytes = write(fd, frame, packet_loc);
+               printf("%d bytes written\n", bytes);
+               alarm(3);
+               alarmEnabled = TRUE;
+            }
          }
       }
    }
