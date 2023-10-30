@@ -21,7 +21,6 @@
 int alarmEnabled = FALSE;
 int alarmCount = 0;
 int fd;
-int frame = 0;
 int llreadDisc = 0;
 struct termios oldtio;
 LinkLayerRole role;
@@ -39,6 +38,7 @@ enum message_state {
 };
 int retransmissions;
 unsigned int trans_frame = 0;
+unsigned int prev_frame = 1;
 
 // Alarm function handler
 void alarmHandler(int signal)
@@ -351,7 +351,6 @@ int llwrite(const unsigned char *buf, int bufSize)
    int alarmExceeded = FALSE; 
    enum message_state state = START;
    while (!accepted && !alarmExceeded){
-      printf("here\n");
       write(fd, frame, packet_loc);
       state = START;
       while (state != END) { 
@@ -359,13 +358,11 @@ int llwrite(const unsigned char *buf, int bufSize)
          switch (state) {
             case START:
                   if (byte == 0x7E) {
-                     printf("flag\n");
                      state = FLAG_RCV;
                   }    
                   break;
             case FLAG_RCV:
                   if (byte == 0x03) {
-                     printf("address\n");
                      state = A_RCV;
                   }
                   else if (byte == 0x7E) {
@@ -377,13 +374,12 @@ int llwrite(const unsigned char *buf, int bufSize)
                   break;
             case A_RCV:
                   if (byte == 0x05 || byte == 0x85){  // RR0, RR1 
-                     printf("rr\n");
                      accepted = TRUE;
+                     
                      state = C_RCV;
                      cbyte = byte;
                   }
                   else if(byte == 0x01 || byte == 0x81) {   //REJ0, REJ1
-                     printf("rej\n");
                      state = C_RCV;
                      cbyte = byte;
                   }
@@ -396,7 +392,6 @@ int llwrite(const unsigned char *buf, int bufSize)
                   break;
             case C_RCV:
                   if (byte == (0x03^cbyte)) {
-                     printf("bcc\n");
                      state = BCC_OK;
                   }
                   else if (byte == 0x7E) {
@@ -408,7 +403,6 @@ int llwrite(const unsigned char *buf, int bufSize)
                   break;
             case BCC_OK:
                   if (byte == 0x7E){
-                     printf("end\n");
                      state = END;
                   }
                   else {
@@ -439,11 +433,9 @@ int llwrite(const unsigned char *buf, int bufSize)
    alarmCount = 0;
    alarmEnabled = FALSE;
    if (accepted) {
-      trans_frame = 1 - trans_frame;
       return packet_loc;
    }
    else {
-      printf("here\n");
       return -1;
    }
 }
@@ -453,7 +445,6 @@ int llwrite(const unsigned char *buf, int bufSize)
 ////////////////////////////////////////////////
 int llread(unsigned char *packet)
 {  
-   printf("llread\n");
    unsigned char tmp[2050];
    enum message_state state = START;
    unsigned char byte;
@@ -469,13 +460,21 @@ int llread(unsigned char *packet)
             break;
          case FLAG_RCV:
             if (byte == 0x03){
+               printf("address\n");
                state = A_RCV;
                }
             else if (byte != 0x7E)
                state = START;
             break;
          case A_RCV:
-            if (byte == 0x00 || byte == 0x40){
+            printf("byte %d\n", byte);
+            printf("trans_frame %d\n", trans_frame);
+            if (byte == 0x00){
+               trans_frame = 0;
+               state = C_RCV;
+            }
+            else if (byte == 0x40){
+               trans_frame = 1;
                state = C_RCV;
             }
             else if (byte == 0x0B) {
@@ -511,27 +510,32 @@ int llread(unsigned char *packet)
                   state = END;
                   buf[0]=0x7E;
                   buf[1]=0x03;
-                  if (frame)
+                  if (trans_frame)
                      buf[2]=0x05;
                   else
                      buf[2]=0x85;
                   buf[3]=buf[1]^buf[2];
                   buf[4]=0x7E;
-                  write(fd,buf,BUF_SIZE); 
-                  printf("llread bem %d\n", size);
-                  return size;
+                  write(fd,buf,BUF_SIZE);
+                  printf("leu direito\n");
+                  printf("size : %d\n", size);
+                  if (prev_frame != trans_frame){
+                    prev_frame = trans_frame;
+                    return size;
+                  }
+                  return -1;
                }
                else{
                   buf[0]=0x7E;
                   buf[1]=0x03;
-                  if (frame)
+                  if (trans_frame)
                      buf[2]=0x01;
                   else
                      buf[2]=0x81;
                   buf[3]=buf[1]^buf[2];
                   buf[4]=0x7E;
                   write(fd,buf,BUF_SIZE);
-                  printf("llread mal\n");
+                  printf("leu mal\n");
                   return -1;
                }
 
@@ -573,7 +577,6 @@ int llcloseTx(){
    int alarmExceeded = FALSE;
    int disconnected = FALSE;
    while (!disconnected && !alarmExceeded){
-      printf("here\n");
       int bytes = write(fd, buf, BUF_SIZE);
       state = START;
       while (state != END){ 
