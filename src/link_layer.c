@@ -22,6 +22,7 @@ int alarmEnabled = FALSE;
 int alarmCount = 0;
 int fd;
 int frame = 0;
+int llreadDisc = 0;
 struct termios oldtio;
 LinkLayerRole role;
 unsigned char buf[BUF_SIZE];
@@ -132,73 +133,83 @@ int llSetFrame() {
    buf[3] = buf[1]^buf[2];
    buf[4] = 0x7E;
    
-   int bytes = write(fd, buf, BUF_SIZE);
-   printf("%d bytes written\n", bytes);
-   
    alarm(3);
    alarmEnabled = TRUE;
    int count = 0;
    unsigned char byte;
    enum message_state state = START;
-
-   while (state != END) {
-      int reception = read(fd, &byte, 1);     
-      
-      switch(state) {
-         case START:
-            if (byte == 0x7E)
-               state = FLAG_RCV;
-            break;
-         case FLAG_RCV:
-            if (byte == 0x01)
-               state = A_RCV;
-            else if (byte != 0x7E)
-               state = START;
-            break;
-         case A_RCV:
-            if (byte == 0x07)
-               state = C_RCV;
-            else if (byte == 0x7E)
-               state = FLAG_RCV;
-            else
-               state = START;
-            break;
-         case C_RCV:
-            if (byte == 0x01^0x07)
-               state = BCC_OK;
-            else if (byte == 0x7E)
-               state = FLAG_RCV;
-            else
-               state = START;
-            break;
-         case BCC_OK:
-            if (byte == 0x7E) {
-               state = END;
-               printf("Connection Established...\n");
+   int alarmExceeded = FALSE;
+   int connected = FALSE;
+   while (!connected && !alarmExceeded){
+      int bytes = write(fd, buf, BUF_SIZE);
+      state = START;
+      while (state != END) {
+         int reception = read(fd, &byte, 1);     
+         switch(state) {
+            case START:
+               if (byte == 0x7E){
+                  state = FLAG_RCV;
+                  printf("flag");}
+               break;
+            case FLAG_RCV:
+               if (byte == 0x03){
+                  state = A_RCV;
+                  printf("address");}
+               else if (byte != 0x7E)
+                  state = START;
+               break;
+            case A_RCV:
+               if (byte == 0x07){
+                  state = C_RCV;
+                  printf("answer");
+                  }
+               else if (byte == 0x7E)
+                  state = FLAG_RCV;
+               else
+                  state = START;
+               break;
+            case C_RCV:
+               if (byte == 0x01^0x07){
+                  state = BCC_OK;
+                  printf("bcc");
+                  }
+               else if (byte == 0x7E)
+                  state = FLAG_RCV;
+               else
+                  state = START;
+               break;
+            case BCC_OK:
+               if (byte == 0x7E) {
+                  state = END;
+                  connected = TRUE;
+                  printf("Connection Established...\n");
+               }
+               else
+                  state = START;
+               break;
             }
-            else
-               state = START;
-            break;
-         }
-      
-      if (alarmEnabled == FALSE && state != END){
-         if (alarmCount > retransmissions) {
-            alarm(0);
-            alarmCount = 0;
-            state = END;
-            printf("Program Terminated...\n");
-            return -1;
-         }
-         else {
-            int bytes = write(fd, buf, BUF_SIZE);
-            printf("%d bytes written\n", bytes);
-            alarm(3);
-            alarmEnabled = TRUE;
+         
+         if (alarmEnabled == FALSE && state != END){
+            if (alarmCount > retransmissions) {
+               alarm(0);
+               alarmCount = 0;
+               state = END;
+               alarmExceeded = TRUE;
+               printf("Program Terminated...\n");
+               return -1;
+            }
+            else {
+               bytes = write(fd, buf, BUF_SIZE);
+               printf("%d bytes written\n", bytes);
+               alarm(3);
+               alarmEnabled = TRUE;
+            }
          }
       }
    }
    alarm(0);
    alarmCount = 0;
+   alarmEnabled = FALSE;
    return 0;
 }
 
@@ -219,7 +230,7 @@ void llUaFrame() {
             case FLAG_RCV:
                if (byte == 0x03){
                   state = A_RCV;
-                  buf[FLAG_RCV] = 0x01;}
+                  buf[FLAG_RCV] = byte;}
                else if (byte != 0x7E)
                   state = START;
                break;
@@ -250,7 +261,6 @@ void llUaFrame() {
                   state = START;
                break;
             }
-         printf("state: %d",state);
     }
     int bytes = write(fd, buf, BUF_SIZE);
     printf("%d bytes written\n", bytes);
@@ -261,7 +271,6 @@ void llUaFrame() {
 ////////////////////////////////////////////////
 int llopen(LinkLayer connectionParameters)
 {    
-   printf("Enter llopen\n");
    establishSerialPort(connectionParameters);
    int connection;
    if (role == LlTx) {
@@ -270,7 +279,6 @@ int llopen(LinkLayer connectionParameters)
    else {
       llUaFrame();
    }
-   printf("Leave llopen\n");
    return connection;
 }
 
@@ -285,7 +293,6 @@ void stuffing(unsigned char* frame, unsigned int packet_location, unsigned char 
 
 int llwrite(const unsigned char *buf, int bufSize)
 {  
-   printf("entered llwrite\n");
    int bufSizeParam = bufSize+6;
    unsigned char* frame = (unsigned char*) malloc (bufSizeParam);
    memset(frame, 0, bufSize+6);
@@ -341,92 +348,102 @@ int llwrite(const unsigned char *buf, int bufSize)
    unsigned char byte;
    unsigned char cbyte;
    int accepted = FALSE;
+   int alarmExceeded = FALSE; 
    enum message_state state = START;
-   write(fd, frame, packet_loc);
-   printf("packet %d\n", packet_loc);
-   while (accepted != TRUE && state != END) { 
-      read(fd, &byte, 1);
-      switch (state) {
-         case START:
-               if (byte == 0x7E) {
-                  state = FLAG_RCV;
-               }    
-               break;
-         case FLAG_RCV:
-               if (byte == 0x01) {
-                  state = A_RCV;
-               }
-               else if (byte == 0x7E) {
-                  state = FLAG_RCV;
-               }  
-               else {
-                  state = START;
-               }  
-               break;
-         case A_RCV:
-               if (byte == 0x05 || byte == 0x85){  // RR0, RR1 
-                  accepted = TRUE;
-                  state = C_RCV;
-                  cbyte = byte;
-               }
-               else if(byte == 0x01 || byte == 0x81) {   //REJ0, REJ1
-                  state = C_RCV;
-                  cbyte = byte;
-               }
-               else if (byte == 0x7E) {
-                  state = FLAG_RCV;
-               }
-               else {
-                  state = START;
-               }
-               break;
-         case C_RCV:
-               if (byte == (0x01^cbyte)) {
-                  state = BCC_OK;
-               }
-               else if (byte == 0x7E) {
-                  state = FLAG_RCV;
-               }
-               else {
-                  state = START;
-               }
-               break;
-         case BCC_OK:
-               if (byte == 0x7E){
-                  state = END;
-               }
-               else {
-                  state = START;
-               }
-               break;
-         default: 
-               break;
-      }
-      //printf("state: %d\n",state);
-      if (alarmEnabled == FALSE && state != END){
-         printf("entrou\n");
-         if (alarmCount > retransmissions) {
-            alarm(0);
-            state = END;
-            printf("Program Terminated...\n");
+   while (!accepted && !alarmExceeded){
+      printf("here\n");
+      write(fd, frame, packet_loc);
+      state = START;
+      while (state != END) { 
+         read(fd, &byte, 1);
+         switch (state) {
+            case START:
+                  if (byte == 0x7E) {
+                     printf("flag\n");
+                     state = FLAG_RCV;
+                  }    
+                  break;
+            case FLAG_RCV:
+                  if (byte == 0x03) {
+                     printf("address\n");
+                     state = A_RCV;
+                  }
+                  else if (byte == 0x7E) {
+                     state = FLAG_RCV;
+                  }  
+                  else {
+                     state = START;
+                  }  
+                  break;
+            case A_RCV:
+                  if (byte == 0x05 || byte == 0x85){  // RR0, RR1 
+                     printf("rr\n");
+                     accepted = TRUE;
+                     state = C_RCV;
+                     cbyte = byte;
+                  }
+                  else if(byte == 0x01 || byte == 0x81) {   //REJ0, REJ1
+                     printf("rej\n");
+                     state = C_RCV;
+                     cbyte = byte;
+                  }
+                  else if (byte == 0x7E) {
+                     state = FLAG_RCV;
+                  }
+                  else {
+                     state = START;
+                  }
+                  break;
+            case C_RCV:
+                  if (byte == (0x03^cbyte)) {
+                     printf("bcc\n");
+                     state = BCC_OK;
+                  }
+                  else if (byte == 0x7E) {
+                     state = FLAG_RCV;
+                  }
+                  else {
+                     state = START;
+                  }
+                  break;
+            case BCC_OK:
+                  if (byte == 0x7E){
+                     printf("end\n");
+                     state = END;
+                  }
+                  else {
+                     state = START;
+                  }
+                  break;
+            default: 
+                  break;
          }
-         else{
-            int bytes = write(fd, frame, packet_loc);
-            printf("%d bytes written\n", bytes);
-            alarm(3);
-            alarmEnabled = TRUE;
+         //printf("state: %d\n",state);
+         if (alarmEnabled == FALSE && state != END){
+            if (alarmCount > retransmissions) {
+               alarm(0);
+               alarmExceeded = TRUE;
+               state = END;
+               printf("Program Terminated...\n");
+            }
+            else{
+               int bytes = write(fd, frame, packet_loc);
+               printf("%d bytes written\n", bytes);
+               alarm(3);
+               alarmEnabled = TRUE;
+            }
          }
       }
    }
    alarm(0);
+   alarmCount = 0;
    alarmEnabled = FALSE;
    if (accepted) {
       trans_frame = 1 - trans_frame;
-      printf("left llwrite nicely\n");
       return packet_loc;
    }
    else {
-      printf("left llwrite\n");
+      printf("here\n");
       return -1;
    }
 }
@@ -436,7 +453,7 @@ int llwrite(const unsigned char *buf, int bufSize)
 ////////////////////////////////////////////////
 int llread(unsigned char *packet)
 {  
-   printf("enter llread\n");
+   printf("llread\n");
    unsigned char tmp[2050];
    enum message_state state = START;
    unsigned char byte;
@@ -460,6 +477,10 @@ int llread(unsigned char *packet)
          case A_RCV:
             if (byte == 0x00 || byte == 0x40){
                state = C_RCV;
+            }
+            else if (byte == 0x0B) {
+               llreadDisc = 1;
+               return -2;
             }
             else if (byte == 0x7E)
                state = FLAG_RCV;
@@ -485,13 +506,11 @@ int llread(unsigned char *packet)
                for (unsigned int i = 1 ; i < size; i++) {
                   bcc ^= tmp[i];
                }
-               printf("bcc %d", bcc);
-               printf("bc %d", tmp[size]);
                if (bcc == tmp[size]){
                   memcpy(packet,tmp,MAX_PAYLOAD_SIZE);
                   state = END;
                   buf[0]=0x7E;
-                  buf[1]=0x01;
+                  buf[1]=0x03;
                   if (frame)
                      buf[2]=0x05;
                   else
@@ -499,13 +518,12 @@ int llread(unsigned char *packet)
                   buf[3]=buf[1]^buf[2];
                   buf[4]=0x7E;
                   write(fd,buf,BUF_SIZE); 
-                  printf("size: %d\n", size);
-                  printf("left llread nice\n");
+                  printf("llread bem %d\n", size);
                   return size;
                }
                else{
                   buf[0]=0x7E;
-                  buf[1]=0x01;
+                  buf[1]=0x03;
                   if (frame)
                      buf[2]=0x01;
                   else
@@ -513,7 +531,7 @@ int llread(unsigned char *packet)
                   buf[3]=buf[1]^buf[2];
                   buf[4]=0x7E;
                   write(fd,buf,BUF_SIZE);
-                  printf("left llread\n");
+                  printf("llread mal\n");
                   return -1;
                }
 
@@ -536,104 +554,106 @@ int llread(unsigned char *packet)
             break;
       }
    }
-   return 0;
 }
 
 ////////////////////////////////////////////////
 // LLCLOSE
 ////////////////////////////////////////////////
-void llcloseTx(){
-   printf("enter llcloseTX\n");
+int llcloseTx(){
    buf[0] = 0x7E;
    buf[1] = 0x03;
    buf[2] = 0x0B;
    buf[3] = buf[1]^buf[2];
    buf[4] = 0x7E;
 
-   int bytes = write(fd, buf, BUF_SIZE);
-   printf("%d bytes written\n", bytes);
-   
    alarm(3);
    alarmEnabled=TRUE;
-   int count = 0;
    unsigned char byte;
    enum message_state state = START;
+   int alarmExceeded = FALSE;
+   int disconnected = FALSE;
+   while (!disconnected && !alarmExceeded){
+      printf("here\n");
+      int bytes = write(fd, buf, BUF_SIZE);
+      state = START;
+      while (state != END){ 
+         int reception = read(fd, &byte, 1);     
+         switch(state) {
+            case START:
+               if (byte == 0x7E)
+                  state = FLAG_RCV;
+               break;
+            case FLAG_RCV:
+               if (byte == 0x03)
+                  state = A_RCV;
+               else if (byte != 0x7E)
+                  state = START;
+               break;
+            case A_RCV:
+               if (byte == 0x0B)
+                  state = C_RCV;
+               else if (byte == 0x7E)
+                  state = FLAG_RCV;
+               else
+                  state = START;
+               break;
+            case C_RCV:
+               if (byte == 0x01^0x0B)
+                  state = BCC_OK;
+               else if (byte == 0x7E)
+                  state = FLAG_RCV;
+               else
+                  state = START;
+               break;
+            case BCC_OK:
+               if (byte == 0x7E) {
+                  state = END;
+                  disconnected = TRUE;
+               }
+               else
+                  state = START;
+               break;
+         }   
 
-   while (state != END) {
-      int reception = read(fd, &byte, 1);     
-      
-      switch(state) {
-         case START:
-            if (byte == 0x7E)
-               state = FLAG_RCV;
-            break;
-         case FLAG_RCV:
-            if (byte == 0x01)
-               state = A_RCV;
-            else if (byte != 0x7E)
-               state = START;
-            break;
-         case A_RCV:
-            if (byte == 0x0B)
-               state = C_RCV;
-            else if (byte == 0x7E)
-               state = FLAG_RCV;
-            else
-               state = START;
-            break;
-         case C_RCV:
-            if (byte == 0x01^0x0B)
-               state = BCC_OK;
-            else if (byte == 0x7E)
-               state = FLAG_RCV;
-            else
-               state = START;
-            break;
-         case BCC_OK:
-            if (byte == 0x7E) {
+         if (alarmEnabled == FALSE && state != END){
+            if (alarmCount > retransmissions) {
+               alarm(0);
                state = END;
+               alarmExceeded = TRUE;
+               printf("Program Terminated...\n");
+               return -1;
             }
-            else
-               state = START;
-            break;
-      }   
-
-      if (alarmEnabled == FALSE && state != END){
-         if (alarmCount > retransmissions) {
-            alarm(0);
-            state = END;
-            printf("Program Terminated...\n");
-         }
-         else{
-            int bytes = write(fd, buf, BUF_SIZE);
-            printf("%d bytes written\n", bytes);
-            alarm(3);
-            alarmEnabled = TRUE;
+            else{
+               int bytes = write(fd, buf, BUF_SIZE);
+               printf("%d bytes written\n", bytes);
+               alarm(3);
+               alarmEnabled = TRUE;
+            }
          }
       }
    }
    alarm(0);
    alarmEnabled = FALSE;
-
+   alarmCount = 0;
    buf[0] = 0x7E;
-   buf[1] = 0x03;
+   buf[1] = 0x01;
    buf[2] = 0x07;
    buf[3] = buf[1]^buf[2];
    buf[4] = 0x7E;
 
-   bytes = write(fd, buf, BUF_SIZE);
-   printf("left llcloseTX\n");
+   int bytes = write(fd, buf, BUF_SIZE);
    printf("Program Terminated...\n");
+   return 0;
 }
 
 void llcloseRx(){
-   printf("enter llcloseRX\n");
    enum message_state state = START;
    unsigned char byte;
-
+   if (llreadDisc){
+      state = C_RCV;
+      }
    while (state != END) {
       int bytes = read(fd, &byte, 1);
-
       switch(state) {
          case START:
             if (byte == 0x7E)
@@ -671,7 +691,7 @@ void llcloseRx(){
          }
    }
    buf[0] = 0x7E;
-   buf[1] = 0x01;
+   buf[1] = 0x03;
    buf[2] = 0x0B;
    buf[3] = buf[1]^buf[2];
    buf[4] = 0x7E;
@@ -686,7 +706,7 @@ void llcloseRx(){
                state = FLAG_RCV;
             break;
          case FLAG_RCV:
-            if (byte == 0x03)
+            if (byte == 0x01)
                state = A_RCV;
             else if (byte != 0x7E)
                state = START;
@@ -719,22 +739,21 @@ void llcloseRx(){
    printf("Program Terminated...\n");
 }
 
-int llclose(int showStatistics)
-{  
+int llclose(int showStatistics){
+   int connection;  
     if (role == LlTx) {
-        llcloseTx();
+        connection = llcloseTx();
     }
     else {
         llcloseRx();
     }
-
     if (showStatistics) {
         printStatistics();
     }
 
     resetPortSettings();
 
-    return 1;
+    return connection;;
 }
 
 void printStatistics() {
