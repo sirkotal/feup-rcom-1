@@ -375,7 +375,6 @@ int llwrite(const unsigned char *buf, int bufSize)
             case A_RCV:
                   if (byte == 0x05 || byte == 0x85){  // RR0, RR1 
                      accepted = TRUE;
-                     
                      state = C_RCV;
                      cbyte = byte;
                   }
@@ -524,6 +523,8 @@ int llread(unsigned char *packet)
                     return size;
                   }
                   return -1;
+                  write(fd,buf,BUF_SIZE); 
+                  return size;
                }
                else{
                   buf[0]=0x7E;
@@ -577,6 +578,7 @@ int llcloseTx(){
    int alarmExceeded = FALSE;
    int disconnected = FALSE;
    while (!disconnected && !alarmExceeded){
+      printf("here\n");
       int bytes = write(fd, buf, BUF_SIZE);
       state = START;
       while (state != END){ 
