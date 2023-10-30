@@ -98,7 +98,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
         FILE *fptr = fopen(name, "wb+");
         int bytes = 0;
         int reada;
-            unsigned char data[MAX_PAYLOAD_SIZE];   
+        unsigned char data[MAX_PAYLOAD_SIZE];   
         do {
             while ((reada = llread(data)) == -1);
             if (reada == -2){
@@ -110,7 +110,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
             if (data[0] == 3) break;
             fwrite(data+3, 1, reada-3, fptr);
             fflush(fptr);
-        } while (reada > 0); 
+        } while (1); 
         fclose(fptr);
         llclose(statistics);
     }

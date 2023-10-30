@@ -432,6 +432,7 @@ int llwrite(const unsigned char *buf, int bufSize)
    alarmCount = 0;
    alarmEnabled = FALSE;
    if (accepted) {
+      trans_frame = 1 - trans_frame;
       return packet_loc;
    }
    else {
