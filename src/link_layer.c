@@ -40,6 +40,7 @@ enum message_state {
 int retransmissions;
 unsigned int trans_frame = 0;
 unsigned int prev_frame = 1;
+double baud;
 clock_t starting;
 clock_t ending;
 
@@ -61,6 +62,7 @@ void establishSerialPort(LinkLayer connectionParameters) {
 
     retransmissions = connectionParameters.nRetransmissions;
     role = connectionParameters.role;
+    baud = (double)connectionParameters.baudRate;
 
     if (fd < 0)
     {
@@ -770,6 +772,10 @@ int llclose(int showStatistics){
 
 void printStatistics() {
     double cpu_time = ((double)(ending - starting)) / CLOCKS_PER_SEC;
+    double transfer_rate = (file_size*8) / cpu_time;
+    double efficiency = transfer_rate / baud; 
     printf("CPU Time Used: %f seconds\n", cpu_time);
+    printf("Transfer Rate: %f bits/s\n", transfer_rate);
+    printf("Efficiency: %f %%\n", efficiency);
     printf("Maximum Payload Size: %d\n", MAX_PAYLOAD_SIZE);
 }
