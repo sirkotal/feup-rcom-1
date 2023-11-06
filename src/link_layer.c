@@ -45,11 +45,9 @@ struct timeval start;
 struct timeval end;
 
 // Alarm function handler
-void alarmHandler(int signal)
-{
+void alarmHandler(int signal){
    alarmCount++;
    alarmEnabled = FALSE;
-   printf("Alarm %d\n", alarmCount);
 }
 
 void establishSerialPort(LinkLayer connectionParameters) {
@@ -152,21 +150,18 @@ int llSetFrame() {
          int reception = read(fd, &byte, 1);     
          switch(state) {
             case START:
-               if (byte == 0x7E){
+               if (byte == 0x7E)
                   state = FLAG_RCV;
-                  printf("flag");}
                break;
             case FLAG_RCV:
-               if (byte == 0x03){
+               if (byte == 0x03)
                   state = A_RCV;
-                  printf("address");}
                else if (byte != 0x7E)
                   state = START;
                break;
             case A_RCV:
                if (byte == 0x07){
                   state = C_RCV;
-                  printf("answer");
                   }
                else if (byte == 0x7E)
                   state = FLAG_RCV;
@@ -176,7 +171,6 @@ int llSetFrame() {
             case C_RCV:
                if (byte == 0x01^0x07){
                   state = BCC_OK;
-                  printf("bcc");
                   }
                else if (byte == 0x7E)
                   state = FLAG_RCV;
@@ -187,7 +181,6 @@ int llSetFrame() {
                if (byte == 0x7E) {
                   state = END;
                   connected = TRUE;
-                  printf("Connection Established...\n");
                }
                else
                   state = START;
@@ -200,12 +193,10 @@ int llSetFrame() {
                alarmCount = 0;
                state = END;
                alarmExceeded = TRUE;
-               printf("Program Terminated...\n");
                return -1;
             }
             else {
                bytes = write(fd, buf, BUF_SIZE);
-               printf("%d bytes written\n", bytes);
                alarm(3);
                alarmEnabled = TRUE;
             }
@@ -268,7 +259,6 @@ void llUaFrame() {
             }
     }
     int bytes = write(fd, buf, BUF_SIZE);
-    printf("%d bytes written\n", bytes);
 }
 
 ////////////////////////////////////////////////
@@ -299,7 +289,7 @@ void stuffing(unsigned char* frame, unsigned int packet_location, unsigned char 
 
 int llwrite(const unsigned char *buf, int bufSize)
 {  
-   int bufSizeParam = bufSize+6;
+   unsigned int bufSizeParam = bufSize+6;
    unsigned char* frame = (unsigned char*) malloc (bufSizeParam);
    memset(frame, 0, bufSize+6);
    *frame = 0x7E;
@@ -417,17 +407,14 @@ int llwrite(const unsigned char *buf, int bufSize)
             default: 
                   break;
          }
-         //printf("state: %d\n",state);
          if (alarmEnabled == FALSE && state != END){
             if (alarmCount > retransmissions) {
                alarm(0);
                alarmExceeded = TRUE;
                state = END;
-               printf("Program Terminated...\n");
             }
             else{
                int bytes = write(fd, frame, packet_loc);
-               printf("%d bytes written\n", bytes);
                alarm(3);
                alarmEnabled = TRUE;
             }
@@ -466,15 +453,12 @@ int llread(unsigned char *packet)
             break;
          case FLAG_RCV:
             if (byte == 0x03){
-               printf("address\n");
                state = A_RCV;
                }
             else if (byte != 0x7E)
                state = START;
             break;
          case A_RCV:
-            printf("byte %d\n", byte);
-            printf("trans_frame %d\n", trans_frame);
             if (byte == 0x00){
                trans_frame = 0;
                state = C_RCV;
@@ -523,8 +507,6 @@ int llread(unsigned char *packet)
                   buf[3]=buf[1]^buf[2];
                   buf[4]=0x7E;
                   write(fd,buf,BUF_SIZE);
-                  printf("leu direito\n");
-                  printf("size : %d\n", size);
                   if (prev_frame != trans_frame){
                     prev_frame = trans_frame;
                     return size;
@@ -543,7 +525,6 @@ int llread(unsigned char *packet)
                   buf[3]=buf[1]^buf[2];
                   buf[4]=0x7E;
                   write(fd,buf,BUF_SIZE);
-                  printf("leu mal\n");
                   return -1;
                }
 
@@ -571,6 +552,8 @@ int llread(unsigned char *packet)
 ////////////////////////////////////////////////
 // LLCLOSE
 ////////////////////////////////////////////////
+
+/*llclose transmitter handler*/
 int llcloseTx(){
    buf[0] = 0x7E;
    buf[1] = 0x03;
@@ -585,7 +568,6 @@ int llcloseTx(){
    int alarmExceeded = FALSE;
    int disconnected = FALSE;
    while (!disconnected && !alarmExceeded){
-      printf("here\n");
       int bytes = write(fd, buf, BUF_SIZE);
       state = START;
       while (state != END){ 
@@ -632,12 +614,10 @@ int llcloseTx(){
                alarm(0);
                state = END;
                alarmExceeded = TRUE;
-               printf("Program Terminated...\n");
                return -1;
             }
             else{
                int bytes = write(fd, buf, BUF_SIZE);
-               printf("%d bytes written\n", bytes);
                alarm(3);
                alarmEnabled = TRUE;
             }
@@ -654,10 +634,10 @@ int llcloseTx(){
    buf[4] = 0x7E;
 
    int bytes = write(fd, buf, BUF_SIZE);
-   printf("Program Terminated...\n");
    return 0;
 }
 
+/*llclose receiver handler*/
 void llcloseRx(){
    enum message_state state = START;
    unsigned char byte;
@@ -748,7 +728,17 @@ void llcloseRx(){
             break;
          }
    }
-   printf("Program Terminated...\n");
+}
+
+/*Show program's statistics*/
+void printStatistics() {
+    double cpu_time = ((double)((end.tv_sec + end.tv_usec*0.000001) - (start.tv_sec + start.tv_usec*0.000001)));
+    double transfer_rate = (double)((10968*8) / cpu_time);
+    double efficiency = transfer_rate / baud;
+    printf("CPU Time Used: %f seconds\n", cpu_time);
+    printf("Transfer Rate: %f bits/s\n", transfer_rate);
+    printf("Efficiency: %f %%\n", efficiency);
+    printf("Maximum Payload Size: %d\n", MAX_PAYLOAD_SIZE);
 }
 
 int llclose(int showStatistics){
@@ -768,14 +758,4 @@ int llclose(int showStatistics){
     resetPortSettings();
 
     return connection;;
-}
-
-void printStatistics() {
-    double cpu_time = ((double)((end.tv_sec + end.tv_usec*0.000001) - (start.tv_sec + start.tv_usec*0.000001)));
-    double transfer_rate = (double)((10968*8) / cpu_time);
-    double efficiency = transfer_rate / baud;
-    printf("CPU Time Used: %f seconds\n", cpu_time);
-    printf("Transfer Rate: %f bits/s\n", transfer_rate);
-    printf("Efficiency: %f %%\n", efficiency);
-    printf("Maximum Payload Size: %d\n", MAX_PAYLOAD_SIZE);
 }
