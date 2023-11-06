@@ -757,5 +757,5 @@ int llclose(int showStatistics){
 
     resetPortSettings();
 
-    return connection;;
+    return connection;
 }
