@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <termios.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "link_layer.h"
 
@@ -39,6 +40,8 @@ enum message_state {
 int retransmissions;
 unsigned int trans_frame = 0;
 unsigned int prev_frame = 1;
+clock_t starting;
+clock_t ending;
 
 // Alarm function handler
 void alarmHandler(int signal)
@@ -272,6 +275,7 @@ void llUaFrame() {
 int llopen(LinkLayer connectionParameters)
 {    
    establishSerialPort(connectionParameters);
+   starting = clock();
    int connection;
    if (role == LlTx) {
       connection = llSetFrame();
@@ -753,6 +757,8 @@ int llclose(int showStatistics){
     else {
         llcloseRx();
     }
+
+    ending = clock();
     if (showStatistics) {
         printStatistics();
     }
@@ -763,5 +769,7 @@ int llclose(int showStatistics){
 }
 
 void printStatistics() {
-    double t_prop;
+    double cpu_time = ((double)(ending - starting)) / CLOCKS_PER_SEC;
+    printf("CPU Time Used: %f seconds\n", cpu_time);
+    printf("Maximum Payload Size: %d\n", MAX_PAYLOAD_SIZE);
 }
