@@ -9,7 +9,7 @@
 #include <sys/stat.h>
 #include <termios.h>
 #include <unistd.h>
-#include <time.h>
+#include <sys/time.h>
 
 #include "link_layer.h"
 
@@ -41,8 +41,8 @@ int retransmissions;
 unsigned int trans_frame = 0;
 unsigned int prev_frame = 1;
 double baud;
-clock_t starting;
-clock_t ending;
+struct timeval start;
+struct timeval end;
 
 // Alarm function handler
 void alarmHandler(int signal)
@@ -277,7 +277,7 @@ void llUaFrame() {
 int llopen(LinkLayer connectionParameters)
 {    
    establishSerialPort(connectionParameters);
-   starting = clock();
+   gettimeofday(&start, NULL);
    int connection;
    if (role == LlTx) {
       connection = llSetFrame();
@@ -760,7 +760,7 @@ int llclose(int showStatistics){
         llcloseRx();
     }
 
-    ending = clock();
+    gettimeofday(&end, NULL);
     if (showStatistics) {
         printStatistics();
     }
@@ -771,9 +771,9 @@ int llclose(int showStatistics){
 }
 
 void printStatistics() {
-    double cpu_time = ((double)(ending - starting)) / CLOCKS_PER_SEC;
-    double transfer_rate = (file_size*8) / cpu_time;
-    double efficiency = transfer_rate / baud; 
+    double cpu_time = ((double)((end.tv_sec + end.tv_usec*0.000001) - (start.tv_sec + start.tv_usec*0.000001)));
+    double transfer_rate = (double)((10968*8) / cpu_time);
+    double efficiency = transfer_rate / baud;
     printf("CPU Time Used: %f seconds\n", cpu_time);
     printf("Transfer Rate: %f bits/s\n", transfer_rate);
     printf("Efficiency: %f %%\n", efficiency);
